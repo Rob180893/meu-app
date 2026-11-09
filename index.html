@@ -343,6 +343,14 @@ input.ni{text-transform:uppercase}
 .pdn{text-transform:uppercase;font-size:13px;word-break:break-word}
 .pdfc summary{cursor:pointer;font-size:12px;color:var(--mut);margin-top:6px}
 .pdfc .gbar{margin-top:6px}
+.bk{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.bk button{background:rgba(255,255,255,.18);color:#fff;border:0;border-radius:8px;padding:6px 10px;font:inherit;font-size:12px;cursor:pointer}
+.bk button:hover{background:rgba(255,255,255,.3)}
+#toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:#1b2230;color:#fff;padding:10px 16px;border-radius:10px;z-index:120;display:none;max-width:90vw;box-shadow:0 6px 20px rgba(0,0,0,.35);font-size:14px}
+.grow td{background:var(--ph);text-align:left!important;font-weight:700;padding:8px;white-space:normal!important}
+.gname{outline:none;text-transform:uppercase;border-radius:4px;padding:1px 4px;cursor:text}
+.gname:focus{background:var(--card);box-shadow:0 0 0 2px var(--ac)}
+.bkta{width:100%;border:1px solid var(--bd);background:var(--card);color:var(--tx);border-radius:8px;padding:8px;font:inherit;margin:8px 0}
 </style>
 <meta name="theme-color" content="#2f6fed">
 <meta name="mobile-web-app-capable" content="yes">
@@ -354,7 +362,8 @@ input.ni{text-transform:uppercase}
 </head>
 <body>
 <button id="burger" aria-label="Menu">☰</button><div id="navbk"></div>
-<header><span>📋 Meu Quadro</span><div class="tabs"><button class="tab" id="thm">Home</button><button class="tab on" id="tq">Quadro</button><button class="tab" id="td">Disciplinas</button><button class="tab" id="tc">Comparar</button><button class="tab" id="tcy">Ciclo</button></div><button class="th" id="th">🌙</button><div id="usr" style="display:none"><img id="uph" alt="" width="28" height="28"><span id="unm"></span><span id="syn" class="sub"></span><button class="x" id="lout">Sair</button></div></header>
+<header><span>📋 Meu Quadro</span><div class="tabs"><button class="tab" id="thm">Home</button><button class="tab on" id="tq">Quadro</button><button class="tab" id="td">Disciplinas</button><button class="tab" id="tc">Comparar</button><button class="tab" id="tcy">Ciclo</button></div><button class="th" id="th">🌙</button>
+<div class="bk"><button id="bkx" title="Baixar um backup de todos os dados">💾 Exportar</button><button id="bkc" title="Baixar os tópicos em planilha CSV">📊 Planilha</button><button id="bki" title="Carregar um backup exportado">📂 Importar</button><input type="file" id="bkf" accept=".json,application/json" hidden></div><div id="usr" style="display:none"><img id="uph" alt="" width="28" height="28"><span id="unm"></span><span id="syn" class="sub"></span><button class="x" id="lout">Sair</button></div></header>
 <div id="bbar"></div>
 <div id="board"></div>
 <div id="disc"></div>
@@ -365,6 +374,7 @@ input.ni{text-transform:uppercase}
 <button id="fab" title="Cronômetro de estudo">⏱</button>
 <div id="foc"></div>
 <div id="reg"></div>
+<div id="toast"></div>
 <div id="rem"></div>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -509,12 +519,23 @@ function render(){
 renderBar();render();
 
 /* ===== Disciplinas ===== */
-const DK='kanban-disc-v1',INTV=[1,7,15,30,45],LBL=['24h','7 dias','15 dias','30 dias','45 dias'];
+const DK='kanban-disc-v1';let INTV=[1,15,30,45];
+const lbl=n=>n===1?'24h':n+' dias';
+const curEd=()=>D.eds.find(e=>e.id===D.edsel)||D.eds[0];
+function normD(){
+  if(!D.eds){D.eds=[{id:uid(),name:'Edital 1',list:Array.isArray(D.list)?D.list:[],cycles:D.cycles,csel:D.csel}];D.edsel=D.eds[0].id}
+  if(!D.eds.some(e=>e.id===D.edsel))D.edsel=D.eds[0].id;
+  D.eds.forEach(e=>{if(!e.list||!e.list.length)e.list=[{id:uid(),name:'Disciplina 1',topics:[]}]});
+  ['list','cycles','csel'].forEach(k=>{delete D[k];Object.defineProperty(D,k,{get(){return curEd()[k]},set(v){curEd()[k]=v},enumerable:false,configurable:true})});
+  D.list.forEach(d=>d.topics.forEach(t=>{if(Array.isArray(t.r)){const o={};[1,7,15,30,45].forEach((n,j)=>{if(t.r[j])o[n]=1});t.r=o}else if(!t.r)t.r={}}));
+  INTV=(D.intv&&D.intv.length?D.intv.slice():[1,15,30,45]).sort((a,b)=>a-b);
+}
 let D={list:[],sel:null};
 try{const s=localStorage.getItem(DK);if(s)D=JSON.parse(s)}catch(e){}
-if(!D.list||!D.list.length)D={sel:null,list:[{id:uid(),name:'Direito Administrativo',topics:[{id:uid(),name:'Atos administrativos',studied:null,q:false,r:[0,0,0,0,0]}]}]};
+if(D.eds)normD();
+if(!D.eds&&(!D.list||!D.list.length))D={sel:null,list:[{id:uid(),name:'Direito Administrativo',topics:[{id:uid(),name:'Atos administrativos',studied:null,q:false,r:{}}]}]};
 if(!D.list.some(x=>x.id===D.sel))D.sel=D.list[0].id;
-D.list.forEach(d=>d.topics.forEach(t=>{t.name=String(t.name).toUpperCase()}));
+D.list.forEach(d=>d.topics.forEach(t=>{t.name=String(t.name).toUpperCase()}));normD();
 const dsave=()=>{try{localStorage.setItem(DK,JSON.stringify(D))}catch(e){}renderRem();push()};
 const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 const addD=(s,n)=>{const [y,m,d]=s.split('-').map(Number);return iso(new Date(y,m-1,d+n))};
@@ -533,6 +554,64 @@ function saveT(){
   const d=D.list.find(x=>x.id===D.run.id),s=(D.run.acc||0)+(D.run.start?(Date.now()-D.run.start)/1000:0);
   if(d){const l=logOf(d),k=D.run.day||iso(new Date());l[k]=(l[k]||0)+s;logAct(d,'Sessão de estudo · '+Math.max(1,Math.round(s/60))+' min',s)}
   D.run=null;dsave();
+}
+function toast(t){const e=document.getElementById('toast');e.textContent=t;e.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>{e.style.display='none'},3800)}
+function edBar(){
+  const bar=el('div','dchips'),msg=el('span','sub');msg.style.color='#d33';
+  const busy='Salve ou cancele a sessão do cronômetro antes de mudar de edital.';
+  bar.append(el('span','sub','Edital:'));
+  D.eds.forEach(e=>{
+    const b=el('button','chip'+(e.id===D.edsel?' on':''),e.name);
+    b.title=e.id===D.edsel?'Clique para renomear':'Abrir este edital';
+    b.onclick=()=>{
+      if(e.id!==D.edsel){
+        if(D.run){msg.textContent=busy;return}
+        D.edsel=e.id;D.sel=D.list[0].id;discView='grid';dsave();refreshAll();return;
+      }
+      const i=el('input');i.value=e.name;b.replaceWith(i);i.focus();i.select();
+      i.onblur=()=>{if(i.value.trim())e.name=i.value.trim();dsave();refreshAll()};
+      i.onkeydown=ev=>{if(ev.key==='Enter')i.blur()};
+    };
+    bar.append(b);
+  });
+  const ni=el('input');ni.placeholder='+ Novo edital';
+  ni.onkeydown=ev=>{if(ev.key==='Enter'&&ni.value.trim()){
+    if(D.run){msg.textContent=busy;return}
+    const ne={id:uid(),name:ni.value.trim(),list:[{id:uid(),name:'Disciplina 1',topics:[]}]};
+    D.eds.push(ne);D.edsel=ne.id;D.sel=ne.list[0].id;discView='grid';dsave();refreshAll();
+  }};
+  bar.append(ni);
+  if(D.eds.length>1){
+    const dx=el('button','x','Excluir edital');
+    dx.onclick=()=>ask(dx,()=>{if(D.run){msg.textContent=busy;return}D.eds=D.eds.filter(e=>e.id!==D.edsel);D.edsel=D.eds[0].id;D.sel=D.list[0].id;discView='grid';dsave();refreshAll()});
+    bar.append(dx);
+  }
+  bar.append(msg);return bar;
+}
+function dl(text,name,type){const b=new Blob([text],{type}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
+function exportData(){dl(JSON.stringify({app:'quadro-estudos',version:1,exported:new Date().toISOString(),boards:BR,disc:D}),'backup-estudos-'+iso(new Date())+'.json','application/json');toast('Backup exportado.')}
+function exportCsv(){
+  const rows=[['Edital','Disciplina','Conteúdo','Tópico','Pág. inicial','Pág. final','Acertos','Erros','Último estudo','Link']];
+  D.eds.forEach(ed=>ed.list.forEach(d=>d.topics.forEach(t=>rows.push([ed.name,d.name,t.g||'',t.name,t.pi||'',t.pf||'',t.h||0,t.e||0,t.studied||'',t.link||'']))));
+  dl('\ufeff'+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(';')).join('\r\n'),'planilha-estudos-'+iso(new Date())+'.csv','text/csv;charset=utf-8');
+  toast('Planilha exportada.');
+}
+function importData(file){
+  const fr=new FileReader();
+  fr.onload=()=>{
+    try{
+      const o=JSON.parse(fr.result);
+      if(!o||o.app!=='quadro-estudos'||!o.boards||!o.disc||!o.boards.list||!o.boards.list.length||!(o.disc.eds||(o.disc.list&&o.disc.list.length)))throw new Error('formato');
+      try{localStorage.setItem('kanban-pre-import-backup',JSON.stringify({BR,D}))}catch(e){}
+      BR=o.boards;D=o.disc;normD();
+      if(!BR.list.some(b=>b.id===BR.sel))BR.sel=BR.list[0].id;
+      if(!D.list.some(x=>x.id===D.sel))D.sel=D.list[0].id;
+      cols=curB().cols;discView='grid';
+      save();dsave();renderBar();render();renderRem();refreshAll();
+      toast('Dados importados com sucesso.');
+    }catch(e){toast('Arquivo inválido. Use um backup exportado por este app.')}
+  };
+  fr.readAsText(file);
 }
 function refreshAll(){
   if(foc.open)renderFoc();
@@ -644,7 +723,7 @@ function renderGrid(root){
   const ni=el('input');ni.placeholder='+ Nova disciplina';ni.style.marginTop='14px';
   ni.onblur=()=>{if(ni.value.trim())ni.value=titleCase(ni.value)};
   ni.onkeydown=e=>{if(e.key==='Enter'&&ni.value.trim()){const d={id:uid(),name:titleCase(ni.value),topics:[]};D.list.push(d);D.sel=d.id;dsave();discView='det';renderDisc()}};
-  root.append(sm,pb,grid,ni);
+  root.append(edBar(),sm,pb,grid,ni);
 }
 function renderFoc(){
   const o=document.getElementById('foc');o.innerHTML='';
@@ -672,6 +751,10 @@ function renderFoc(){
   o.append(box);
 }
 document.getElementById('fab').onclick=()=>{foc.open=true;renderFoc()};
+document.getElementById('bkx').onclick=exportData;
+document.getElementById('bkc').onclick=exportCsv;
+document.getElementById('bki').onclick=()=>document.getElementById('bkf').click();
+document.getElementById('bkf').onchange=e=>{const f=e.target.files[0];if(f)importData(f);e.target.value=''};
 let homeW=0,homeM='t',goalEdit=false;
 const QUOTES=['Constância vence talento: um pouco por dia, todos os dias.','Quem estuda hoje, comemora depois.','O difícil de hoje é o fácil de amanhã.','Não precisa ser perfeito, precisa ser constante.','Cada tópico concluído é um passo mais perto da aprovação.','Revisar é o que transforma estudo em memória.','Um dia de cada vez, uma questão de cada vez.'];
 const hm=s=>{s=Math.floor(s/60);return Math.floor(s/60)+'h'+String(s%60).padStart(2,'0')+'min'};
@@ -685,7 +768,7 @@ function renderHome(){
   let sec=0,st=0,n=0,hi=0,er=0;
   D.list.forEach(d=>{const s=discStats(d);st+=s.st;n+=s.n;hi+=s.hi;er+=s.er;sec+=tstats(d).tot});
   const q=hi+er,pc=q?Math.round(hi/q*100):0,pg=n?Math.round(st/n*100):0;
-  root.append(el('h2','hh','Home'));
+  root.append(el('h2','hh','Home'),edBar());
   const sm=el('div','hcards');
   const card=(t,lines,big)=>{const c=el('div','hc');c.append(el('small',null,t));lines.forEach(([x,col])=>{const l=el('div','hl',x);l.style.color=col;c.append(l)});c.append(el('div','hbig',big));return c};
   sm.append(card('Tempo de estudo',[],hm(sec)),card('Desempenho',[[hi+' acertos','#2e9e5b'],[er+' erros','#d33']],pc+'%'),card('Progresso no edital',[[st+' tópicos concluídos','#2e9e5b'],[(n-st)+' tópicos pendentes','#d33']],pg+'%'));
@@ -749,7 +832,7 @@ function renderHome(){
 
   const at=el('div','blk');at.append(el('h3',null,'Últimas atividades'));
   const ah=el('div','acth');ah.append(el('span',null,'HOJE'),el('i'),el('span',null,'⏱ '+hm(dayS(T))));at.append(ah);
-  const todayActs=(D.acts||[]).filter(a=>iso(new Date(a.t))===T).reverse();
+  const todayActs=(D.acts||[]).filter(a=>iso(new Date(a.t))===T&&D.list.some(x=>x.id===a.d)).reverse();
   const al=el('div','acts');
   if(!todayActs.length)al.append(el('div','sub','Nenhuma atividade registrada hoje.'));
   todayActs.slice(0,30).forEach(a=>{
@@ -838,13 +921,13 @@ function renderDisc(){
   const b1=el('div','blk');b1.append(el('h3',null,'📖 Estudar'));
   d.topics.forEach(t=>{
     const r=el('div','row'+(t.studied?' done':'')),l=el('label'),cb=el('input');cb.type='checkbox';cb.checked=!!t.studied;
-    cb.onchange=()=>{t.studied=cb.checked?T:null;if(!cb.checked)t.r=[0,0,0,0,0];dsave();renderDisc()};
+    cb.onchange=()=>{t.studied=cb.checked?T:null;if(!cb.checked)t.r={};dsave();renderDisc()};
     l.append(cb,el('span',null,t.name));r.append(l);
     if(t.studied){const di=el('input');di.type='date';di.value=t.studied;di.title='Data do estudo';di.onchange=()=>{if(di.value){t.studied=di.value;dsave();renderDisc()}};r.append(di)}
     const x=el('button','x','×');x.onclick=()=>{d.topics=d.topics.filter(k=>k!==t);dsave();renderDisc()};r.append(x);b1.append(r);
   });
   const ti=el('input','ni');ti.placeholder='+ Adicionar assunto';
-  ti.onkeydown=e=>{if(e.key==='Enter'&&ti.value.trim()){d.topics.push({id:uid(),name:ti.value.trim(),studied:null,q:false,r:[0,0,0,0,0]});dsave();renderDisc();const f=document.querySelector('#disc .blk input.ni');f&&f.focus()}};
+  ti.onkeydown=e=>{if(e.key==='Enter'&&ti.value.trim()){d.topics.push({id:uid(),name:ti.value.trim(),studied:null,q:false,r:{}});dsave();renderDisc();const f=document.querySelector('#disc .blk input.ni');f&&f.focus()}};
   b1.append(ti);
 
   // Questões
@@ -859,13 +942,14 @@ function renderDisc(){
   const eb=el('div','blk');eb.style.gridColumn='1/-1';
   eb.append(el('h3',null,'📋 Edital verticalizado · '+dst.st+' de '+dst.n+' tópicos ('+pcg+'%)'));
   const pbar=el('div','gbar'),pf=el('div','gfill');pf.style.width=pcg+'%';pbar.append(pf);pbar.style.marginBottom='10px';eb.append(pbar);
+  let lastG='';
   const tw=el('div','tw'),tb=el('table','ct'),hr=el('tr');
   ['✔','Tópico','Pág. inicial','Pág. final','Págs.','✓','✗','Total','%','Último estudo','Link'].forEach(x=>hr.append(el('th',null,x)));tb.append(hr);
   const bdg=(h,e)=>{const q=h+e,p=q?Math.round(h/q*100):0;return el('span','bdg '+(!q?'z':p>=80?'g':p>=60?'y':'r'),q?String(p):'–')};
   const td=(c,...n)=>{const x=el('td',c);x.append(...n);return x};
   d.topics.forEach(t=>{
     const tr=el('tr',t.studied?'dn':''),cb=el('input');cb.type='checkbox';cb.checked=!!t.studied;
-    cb.onchange=()=>{t.studied=cb.checked?T:null;if(cb.checked)logAct(d,'Tópico estudado: '+t.name);if(!cb.checked)t.r=[0,0,0,0,0];dsave();renderDisc()};
+    cb.onchange=()=>{t.studied=cb.checked?T:null;if(cb.checked)logAct(d,'Tópico estudado: '+t.name);if(!cb.checked)t.r={};dsave();renderDisc()};
     const dx=el('button','x','×');dx.title='Excluir tópico';dx.onclick=()=>ask(dx,()=>{d.topics=d.topics.filter(k=>k!==t);dsave();renderDisc()});
     const num=k=>{const i=el('input','nm');i.type='number';i.min='0';i.value=t[k]||0;i.onchange=()=>{const old=(t.h||0)+(t.e||0);t[k]=Math.max(0,Math.floor(Number(i.value))||0);const nw=(t.h||0)+(t.e||0);if(nw>old){D.qlog=D.qlog||{};D.qlog[T]=(D.qlog[T]||0)+(nw-old);logAct(d,'Questões: +'+(nw-old)+' · '+t.name)}t.q=nw>0;dsave();renderDisc()};return i};
     const tsp=el('span','tnm',t.name);tsp.contentEditable='true';tsp.spellcheck=false;tsp.title='Clique para editar o tópico';
@@ -878,6 +962,17 @@ function renderDisc(){
     if(t.link){const a=el('a',null,'Abrir ↗');a.href=t.link;a.target='_blank';a.rel='noopener';const xe=el('button','x','✎');xe.title='Remover link';xe.onclick=()=>{t.link='';dsave();renderDisc()};lc.append(a,xe)}
     else{const b=el('button','x','Adicionar');b.onclick=()=>{const i=el('input','lk');i.type='text';i.placeholder='https://';b.replaceWith(i);i.focus();i.onblur=()=>{let v=i.value.trim();if(v&&!/^https?:\/\//i.test(v))v='https://'+v;t.link=v;dsave();renderDisc()};i.onkeydown=e=>{if(e.key==='Enter')i.blur()}};lc.append(b)}
     tr.append(td('',cb),td('tn',tsp,dx),td('',pnum('pi')),td('',pnum('pf')),td('',String(npg(t)||'–')),td('',num('h')),td('',num('e')),td('',String((t.h||0)+(t.e||0))),td('',bdg(t.h||0,t.e||0)),dc,lc);
+    if((t.g||'')!==lastG){
+      lastG=t.g||'';
+      if(lastG){
+        const gname=lastG,gt=d.topics.filter(k=>(k.g||'')===gname),gd=gt.filter(k=>k.studied).length;
+        const gr=el('tr','grow'),gc=el('td'),gs=el('span','gname',gname);gc.colSpan=11;
+        gs.contentEditable='true';gs.spellcheck=false;gs.title='Clique para renomear este conteúdo';
+        gs.onblur=()=>{const v=gs.textContent.trim().toUpperCase();if(v&&v!==gname){d.topics.forEach(k=>{if((k.g||'')===gname)k.g=v});dsave();renderDisc()}else gs.textContent=gname};
+        gs.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();gs.blur()}};
+        gc.append('📂 ',gs,el('span','sub','  '+gd+'/'+gt.length+' tópicos'));gr.append(gc);tb.append(gr);
+      }
+    }
     tb.append(tr);
   });
   const fr=el('tr');
@@ -885,16 +980,38 @@ function renderDisc(){
   fr.append(td('',''),td('tn','TOTAL'),td(''),td(''),pc2,td('',String(dst.hi)),td('',String(dst.er)),td('',String(dst.q)),td('',bdg(dst.hi,dst.er)),td('',''),td('',''));
   tb.append(fr);tw.append(tb);
   const tin=el('input','ni');tin.placeholder='+ Adicionar tópico';
-  tin.onkeydown=e=>{if(e.key==='Enter'&&tin.value.trim()){d.topics.push({id:uid(),name:tin.value.trim().toUpperCase(),studied:null,q:false,r:[0,0,0,0,0],h:0,e:0});dsave();renderDisc();const f=document.querySelector('#disc .blk input.ni');f&&f.focus()}};
-  eb.append(tw,tin);g.append(eb);
+  tin.onkeydown=e=>{if(e.key==='Enter'&&tin.value.trim()){d.topics.push({id:uid(),name:tin.value.trim().toUpperCase(),studied:null,q:false,r:{},h:0,e:0});dsave();renderDisc();const f=document.querySelector('#disc .blk input.ni');f&&f.focus()}};
+  const bkw=el('div'),bkb=el('button','tmb s','📥 Colar vários tópicos'),bkp=el('div');
+  bkw.style.marginTop='10px';bkp.style.display='none';
+  const bka=el('textarea','bkta');bka.rows=7;bka.placeholder='Cole aqui a lista, um tópico por linha.\nUma linha que termina com ":" ou começa com "#" cria um novo conteúdo (grupo) para os tópicos seguintes.\nNúmeros e marcadores no início (1., 1.1, -, •) são removidos.';
+  const bkm=el('div','rerr'),bko=el('button','tmb s','Adicionar à tabela');
+  bkb.onclick=()=>{bkp.style.display=bkp.style.display==='none'?'':'none'};
+  bko.onclick=()=>{
+    let grp='',cnt=0;const have=new Set(d.topics.map(k=>k.name));
+    bka.value.split(/\r?\n/).forEach(raw=>{
+      let s=raw.trim();if(!s)return;
+      if(/^#/.test(s)||/:$/.test(s)){grp=s.replace(/^#+\s*/,'').replace(/:$/,'').trim().toUpperCase();return}
+      s=s.replace(/^(\d+(\.\d+)*[.)\-–]?\s+|[-•*]\s+)/,'').trim().toUpperCase();
+      if(!s||have.has(s))return;
+      have.add(s);d.topics.push({id:uid(),name:s,g:grp,studied:null,q:false,r:{},h:0,e:0});cnt++;
+    });
+    if(cnt){dsave();renderDisc();toast(cnt+(cnt>1?' tópicos adicionados.':' tópico adicionado.'))}else bkm.textContent='Nenhum tópico novo encontrado.';
+  };
+  bkp.append(bka,bko,bkm);bkw.append(bkb,bkp);
+  eb.append(tw,tin,bkw);g.append(eb);
 
 }
 
   // Revisão + calendário
   const b3=el('div','blk rev'),rl=el('div','rl'),cl=el('div','cal');
-  rl.append(el('h3',null,'🔁 Revisão (24h · 7 · 15 · 30 · 45 dias)'));
+  rl.append(el('h3',null,'🔁 Revisão ('+INTV.map(lbl).join(' · ')+')'));
+  const cfg=el('div','dchips');cfg.style.marginBottom='8px';
+  INTV.forEach(n=>{const c=el('button','chip',lbl(n)+' ×');c.title='Remover este intervalo';c.onclick=()=>{if(INTV.length>1){D.intv=INTV.filter(x=>x!==n);normD();dsave();renderDisc()}};cfg.append(c)});
+  const ni2=el('input');ni2.type='number';ni2.min='1';ni2.placeholder='+ dias';ni2.style.width='90px';ni2.title='Digite o número de dias e tecle Enter';
+  ni2.onkeydown=e=>{if(e.key==='Enter'){const v=Math.floor(Number(ni2.value));if(v>0&&!INTV.includes(v)){D.intv=INTV.concat(v);normD();dsave();renderDisc()}}};
+  cfg.append(ni2);rl.append(cfg);
   const due=[];
-  d.topics.forEach(t=>{if(!t.studied)return;INTV.forEach((n,i)=>{const ds=addD(t.studied,n);if(ds===T||(ds<T&&!t.r[i]))due.push({t,i,ds})})});
+  d.topics.forEach(t=>{if(!t.studied)return;INTV.forEach(n=>{const i=n;const ds=addD(t.studied,n);if(ds===T||(ds<T&&!t.r[i]))due.push({t,i,ds})})});
   due.sort((a,b)=>a.ds<b.ds?-1:a.ds>b.ds?1:0);
   const tb2=el('div','blk today'),pend=due.filter(x=>!x.t.r[x.i]).length;
   tb2.style.marginBottom='12px';
@@ -903,7 +1020,7 @@ function renderDisc(){
   due.forEach(x=>{
     const r=el('div','row'+(x.t.r[x.i]?' done':'')),l=el('label'),cb=el('input');cb.type='checkbox';cb.checked=!!x.t.r[x.i];
     cb.onchange=()=>{x.t.r[x.i]=cb.checked?1:0;dsave();renderDisc()};
-    const sp=el('span'),late=x.ds<T,sb=el('div','sub',LBL[x.i]+(late?' · atrasada desde '+fmt(x.ds):' · hoje'));
+    const sp=el('span'),late=x.ds<T,sb=el('div','sub',lbl(x.i)+(late?' · atrasada desde '+fmt(x.ds):' · hoje'));
     if(late&&!x.t.r[x.i])sb.style.color='#d33';
     sp.append(el('div',null,x.t.name),sb);l.append(cb,sp);r.append(l);tb2.append(r);
   });
@@ -912,9 +1029,9 @@ function renderDisc(){
   d.topics.filter(t=>t.studied).forEach(t=>{
     const rt=el('div','rt');rt.append(el('div',null,t.name),el('div','sub','Estudado em '+fmt(t.studied)));
     const pl=el('div','pills');
-    INTV.forEach((n,i)=>{
+    INTV.forEach(n=>{const i=n;
       const ds=addD(t.studied,n);(map[ds]=map[ds]||[]).push({t,i,ds});
-      const p=el('button','pill'+(t.r[i]?' ok':ds<T?' late':ds===T?' today':''),(t.r[i]?'✓ ':'')+LBL[i]+' · '+fmt(ds));
+      const p=el('button','pill'+(t.r[i]?' ok':ds<T?' late':ds===T?' today':''),(t.r[i]?'✓ ':'')+lbl(i)+' · '+fmt(ds));
       p.onclick=()=>{t.r[i]=t.r[i]?0:1;dsave();renderDisc()};pl.append(p);
     });
     rt.append(pl);rl.append(rt);
@@ -940,7 +1057,7 @@ function renderDisc(){
   const day=map[cal.sel]||[];
   if(!day.length)dl.append(el('div',null,'Nenhuma revisão neste dia.'));
   day.forEach(x=>{const r=el('div','row'+(x.t.r[x.i]?' done':'')),l=el('label'),cb=el('input');cb.type='checkbox';cb.checked=!!x.t.r[x.i];
-    cb.onchange=()=>{x.t.r[x.i]=cb.checked?1:0;dsave();renderDisc()};l.append(cb,el('span',null,x.t.name+' ('+LBL[x.i]+')'));r.append(l);dl.append(r)});
+    cb.onchange=()=>{x.t.r[x.i]=cb.checked?1:0;dsave();renderDisc()};l.append(cb,el('span',null,x.t.name+' ('+lbl(x.i)+')'));r.append(l);dl.append(r)});
   cl.append(dl,el('div','leg','Número = revisões pendentes · vermelho = atrasadas · ✓ = concluídas'));
   b3.append(rl,cl);g.append(b3);root.append(g);
 }
@@ -952,7 +1069,7 @@ function renderRem(){
   const box=document.getElementById('rem'),T=iso(new Date()),items=[];
   D.list.forEach(d=>d.topics.forEach(t=>{
     if(!t.studied)return;
-    INTV.forEach((n,i)=>{const ds=addD(t.studied,n);if(!t.r[i]&&ds<=T)items.push({d,t,i,ds})});
+    INTV.forEach(n=>{const i=n;const ds=addD(t.studied,n);if(!t.r[i]&&ds<=T)items.push({d,t,i,ds})});
   }));
   items.sort((a,b)=>a.ds<b.ds?-1:a.ds>b.ds?1:0);
   box.innerHTML='';
@@ -970,7 +1087,7 @@ function renderRem(){
     const r=el('div','row'),cb=el('input');cb.type='checkbox';cb.title='Marcar como feita';
     cb.onchange=()=>{x.t.r[x.i]=1;dsave();if(discEl.style.display==='block')renderDisc();if(cmpEl.style.display==='block')renderCmp()};
     const tx=el('div','rtx');tx.title='Abrir disciplina';
-    const late=x.ds<T,sub=el('div','sub',x.d.name+' · '+LBL[x.i]+(late?' · atrasada ('+fmt(x.ds)+')':' · hoje'));
+    const late=x.ds<T,sub=el('div','sub',x.d.name+' · '+lbl(x.i)+(late?' · atrasada ('+fmt(x.ds)+')':' · hoje'));
     if(late)sub.style.color='#d33';
     tx.append(el('div',null,x.t.name),sub);
     tx.onclick=()=>{D.sel=x.d.id;discView='det';dsave();tab('d')};
@@ -1189,7 +1306,7 @@ function renderCmp(){
   tb.append(tr(['Disciplina','Hoje','7 dias','30 dias','Total','Assuntos estudados','Questões feitas','Revisões feitas'],'th'));
   rows.forEach(r=>{
     const d=r.d,n=d.topics.length,st=d.topics.filter(t=>t.studied).length,q=d.topics.filter(t=>t.q).length;
-    const rv=d.topics.reduce((a,t)=>a+t.r.filter(Boolean).length,0);
+    const rv=d.topics.reduce((a,t)=>a+Object.values(t.r||{}).filter(Boolean).length,0);
     tb.append(tr([d.name,fmtH(secIn(d,'d')),fmtH(secIn(d,'7')),fmtH(secIn(d,'30')),fmtH(secIn(d,'all')),st+'/'+n,q+'/'+n,rv+'/'+(st*5)],'td'));
   });
   
@@ -1241,8 +1358,8 @@ function applyRemote(d){
   try{
     const b=JSON.parse(d.boards),x=JSON.parse(d.disc);
     if(b&&b.list&&b.list.length)BR=b;
-    if(x&&x.list&&x.list.length)D=x;
-    D.list.forEach(d=>d.topics.forEach(t=>{t.name=String(t.name).toUpperCase()}));
+    if(x&&(x.eds||(x.list&&x.list.length)))D=x;
+    D.list.forEach(d=>d.topics.forEach(t=>{t.name=String(t.name).toUpperCase()}));normD();
     if(!BR.list.some(k=>k.id===BR.sel))BR.sel=BR.list[0].id;
     if(!D.list.some(k=>k.id===D.sel))D.sel=D.list[0].id;
     cols=curB().cols;
