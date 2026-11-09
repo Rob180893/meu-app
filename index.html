@@ -323,6 +323,26 @@ input.ni{text-transform:uppercase}
 .act{border-left:5px solid var(--ac);padding:4px 10px;margin-bottom:10px}
 .act b{display:block;text-transform:uppercase;font-size:13px}
 .act small{color:var(--mut);display:block;word-break:break-word}
+#reg{position:fixed;inset:0;z-index:95;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:14px;overflow:auto}
+.rbox{background:var(--card);color:var(--tx);border-radius:16px;padding:22px;width:100%;max-width:720px;box-shadow:0 12px 40px rgba(0,0,0,.4);max-height:100%;overflow:auto}
+.rhd{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.rhd h2{margin:0;font-size:24px}
+.rg{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px 18px;margin:14px 0}
+.rf small{display:block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--mut)}
+.rf select,.rf input,.rf textarea,.rset input{width:100%;border:0;border-bottom:2px solid var(--ac);background:transparent;color:var(--tx);font:inherit;padding:4px 2px;outline:none;border-radius:0;min-width:0}
+.rf select option{color:#111}
+.rset{border:2px solid var(--ac);border-radius:14px;padding:8px 12px 10px;margin:0;min-width:0}
+.rset legend{font-size:11px;font-weight:700;text-transform:uppercase;color:var(--mut);padding:0 6px}
+.rset .two{display:flex;gap:8px}
+.rck{display:flex;gap:8px;align-items:center;font-size:12px;font-weight:700;text-transform:uppercase;margin:8px 0;cursor:pointer}
+.rdt{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.rdt input{border:1px solid var(--bd);background:var(--card);color:var(--tx);border-radius:8px;padding:4px 6px;font:inherit}
+.rbtns{display:flex;justify-content:flex-end;gap:10px;margin-top:14px}
+.rerr{color:#d33;font-size:13px;min-height:16px}
+.pdfc{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px;margin:10px 0}
+.pdn{text-transform:uppercase;font-size:13px;word-break:break-word}
+.pdfc summary{cursor:pointer;font-size:12px;color:var(--mut);margin-top:6px}
+.pdfc .gbar{margin-top:6px}
 </style>
 <meta name="theme-color" content="#2f6fed">
 <meta name="mobile-web-app-capable" content="yes">
@@ -344,6 +364,7 @@ input.ni{text-transform:uppercase}
 <div id="login"><div class="lcard"><div class="lt">📋 Meu Quadro de Estudos</div><p id="lmsg">Carregando…</p><button id="lbtn" class="tmb" style="display:none">Entrar com Google</button><div id="lerr"></div></div></div>
 <button id="fab" title="Cronômetro de estudo">⏱</button>
 <div id="foc"></div>
+<div id="reg"></div>
 <div id="rem"></div>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -352,7 +373,7 @@ input.ni{text-transform:uppercase}
 /* ====== COLE AQUI A CONFIGURAÇÃO DO SEU PROJETO FIREBASE ====== */
 const FB_CFG={
   apiKey:"AIzaSyCjPPfYCucNzbZMpBJRWuUK2SC-ch67r0U",
-  authDomain:"concurso-1fe2d.firebaseapp.com",
+  authDomain:location.hostname.endsWith(".firebaseapp.com")?location.hostname:"concurso-1fe2d.firebaseapp.com",
   projectId:"concurso-1fe2d",
   storageBucket:"concurso-1fe2d.firebasestorage.app",
   messagingSenderId:"394765025306",
@@ -513,6 +534,94 @@ function saveT(){
   if(d){const l=logOf(d),k=D.run.day||iso(new Date());l[k]=(l[k]||0)+s;logAct(d,'Sessão de estudo · '+Math.max(1,Math.round(s/60))+' min',s)}
   D.run=null;dsave();
 }
+function refreshAll(){
+  if(foc.open)renderFoc();
+  if(discEl.style.display==='block')renderDisc();
+  if(homeEl.style.display==='block')renderHome();
+  if(cmpEl.style.display==='block')renderCmp();
+  if(cycEl.style.display==='block')renderCyc();
+}
+function openReg(){
+  if(!D.run)return;
+  pauseT();
+  const sess=D.run,secs=Math.round(sess.acc||0),T=iso(new Date()),Y=addD(T,-1);
+  const o=document.getElementById('reg');o.innerHTML='';o.style.display='flex';
+  const close=()=>{o.style.display='none';o.innerHTML='';refreshAll()};
+  const pt=s=>{const p=String(s).split(':').map(x=>parseInt(x,10)||0);while(p.length<3)p.unshift(0);return p[0]*3600+p[1]*60+p[2]};
+  const inp=(ph,v,type)=>{const i=el('input');if(type)i.type=type;if(ph)i.placeholder=ph;if(v!=null)i.value=v;return i};
+  const fld=(l,n)=>{const f=el('div','rf');f.append(el('small',null,l),n);return f};
+  const chk=l=>{const lb=el('label','rck'),c=el('input');c.type='checkbox';c.style.width='auto';lb.append(c,l);lb.c=c;return lb};
+  let dateSel=T;
+  const box=el('div','rbox'),hd=el('div','rhd');
+  const cx=el('button','x','✕');cx.onclick=close;hd.append(el('h2',null,'Registro de Estudo'),cx);
+  const dr=el('div','rdt'),dpick=inp('',T,'date');dpick.style.display='none';
+  const dbs=[['Hoje',T],['Ontem',Y],['Outro',null]].map(([n,v])=>{
+    const b=el('button','chip'+(n==='Hoje'?' on':''),n);
+    b.onclick=()=>{dbs.forEach(x=>x.classList.toggle('on',x===b));if(v){dateSel=v;dpick.style.display='none'}else{dpick.style.display='';dateSel=dpick.value||T}};
+    dr.append(b);return b;
+  });
+  dpick.onchange=()=>{dateSel=dpick.value||T};dr.append(dpick);
+  const cat=el('select');['Teoria','Videoaula','Questões'].forEach(c=>cat.append(new Option(c,c)));
+  const dsel=el('select');D.list.forEach(k=>dsel.append(new Option(k.name,k.id)));dsel.value=sess.id;
+  const tsel=el('select');
+  const fillT=()=>{tsel.innerHTML='';tsel.append(new Option('— nenhum —',''));D.list.find(x=>x.id===dsel.value).topics.forEach(t=>tsel.append(new Option(t.name,t.id)))};
+  fillT();dsel.onchange=fillT;
+  const tm=inp('HH:MM:SS',fmtT(secs)),mat=inp('Ex.: Aula 01','');
+  const g1=el('div','rg');g1.append(fld('Categoria',cat),fld('Disciplina',dsel),fld('Tempo de estudo',tm),fld('Tópico',tsel),fld('Material',mat));
+  const ck1=chk('Teoria finalizada'),ck2=chk('Programar revisões');
+  const fs=(t,...n)=>{const f=el('fieldset','rset');f.append(el('legend',null,t),...n);return f};
+  const two=(...n)=>{const d=el('div','two');d.append(...n);return d};
+  const ac=inp('0',0,'number'),er=inp('0',0,'number'),pi=inp('0',0,'number'),pf=inp('0',0,'number');
+  [ac,er,pi,pf].forEach(i=>i.min='0');
+  const vt=inp('Vídeo 01',''),vi=inp('00:00:00',''),vf=inp('00:00:00','');
+  const g3=el('div','rg');
+  g3.append(fs('Questões',el('small',null,'Acertos / Erros'),two(ac,er)),fs('Páginas',el('small',null,'Início / Fim'),two(pi,pf)),fs('Videoaulas',el('small',null,'Título / Início / Fim'),two(vt,vi,vf)));
+  const com=el('textarea');com.rows=2;
+  const err=el('div','rerr'),bt=el('div','rbtns');
+  const cn=el('button','tmb cn','Cancelar');cn.onclick=close;
+  const sv=el('button','tmb','Salvar');
+  sv.onclick=()=>{
+    const dd=D.list.find(x=>x.id===dsel.value),t=dd.topics.find(x=>x.id===tsel.value);
+    const h=Math.max(0,parseInt(ac.value,10)||0),e=Math.max(0,parseInt(er.value,10)||0);
+    if((h||e)&&!t){err.textContent='Selecione um tópico para registrar as questões.';return}
+    const s=Math.max(0,pt(tm.value)),k=dateSel||T,l=logOf(dd);
+    l[k]=(l[k]||0)+s;
+    const parts=[cat.value];
+    if(t){
+      parts.push(t.name);
+      if(h||e){t.h=(t.h||0)+h;t.e=(t.e||0)+e;t.q=true;D.qlog=D.qlog||{};D.qlog[k]=(D.qlog[k]||0)+h+e}
+      if((ck1.c.checked||ck2.c.checked)&&!t.studied)t.studied=k;
+    }
+    if(mat.value.trim())parts.push('Material: '+mat.value.trim());
+    if(h||e)parts.push(h+' acertos / '+e+' erros');
+    if(pi.value>0||pf.value>0)parts.push('págs. '+(pi.value||0)+'–'+(pf.value||0));
+    if(vt.value.trim()&&(vi.value||vf.value))parts.push(vt.value.trim()+' ('+(vi.value||'00:00:00')+'–'+(vf.value||'00:00:00')+')');
+    if(com.value.trim())parts.push('“'+com.value.trim()+'”');
+    parts.push(fmtT(s));
+    logAct(dd,parts.join(' · '),s);
+    if(k!==T)D.acts[D.acts.length-1].t=new Date(k+'T12:00:00').getTime();
+    {const a1=parseInt(pi.value,10)||0,b1=parseInt(pf.value,10)||0;if(t&&a1>0&&b1>=a1){t.pi=a1;t.pf=b1}}
+    D.run=null;dsave();close();
+  };
+  bt.append(cn,sv);
+  box.append(hd,dr,g1,ck1,ck2,g3,fld('Comentários',com),err,bt);o.append(box);
+}
+function addPages(d,name,a,b,date,total){
+  d.pdfs=d.pdfs||[];
+  let m=d.pdfs.find(x=>x.name.toLowerCase()===name.toLowerCase());
+  if(!m){m={id:uid(),name,total:0,reads:[]};d.pdfs.push(m)}
+  if(total>0)m.total=total;
+  if(b<a){const t=a;a=b;b=t}
+  m.reads.push({id:uid(),a,b,date});
+  return m;
+}
+function pagesRead(m){
+  const r=m.reads.map(x=>[x.a,x.b]).sort((p,q)=>p[0]-q[0]);
+  let c=0,e=0;
+  r.forEach(([a,b])=>{if(b<a)return;if(a>e){c+=b-a+1;e=b}else if(b>e){c+=b-e;e=b}});
+  return c;
+}
+const npg=x=>(x.pi>0&&x.pf>=x.pi)?x.pf-x.pi+1:0;
 function logAct(d,txt,sec){D.acts=D.acts||[];D.acts.push({t:Date.now(),d:d.id,txt,s:sec||0});if(D.acts.length>300)D.acts=D.acts.slice(-300)}
 function cancelT(){D.run=null;dsave()}
 let discView='grid',focUp=null,foc={open:false,mode:'sw',goalMin:60,did:null};
@@ -553,7 +662,7 @@ function renderFoc(){
   const bar=el('div','gbar'),fl=el('div','gfill');bar.append(fl);
   const lb=el('div','sub'),big=el('div','fbig'),msg=el('div','sub');
   const pp=el('button','fcirc',running?'⏸':'▶');pp.title=running?'Pausar':'Iniciar';pp.onclick=()=>{if(running)pauseT();else startT(d);renderFoc()};
-  const sv=el('button','fcirc ok','⏹');sv.title='Parar e salvar';sv.disabled=!sess;sv.onclick=()=>{saveT();renderFoc()};
+  const sv=el('button','fcirc ok','⏹');sv.title='Parar e salvar';sv.disabled=!sess;sv.onclick=()=>openReg();
   const ctl=el('div','frow');ctl.append(pp,sv);
   if(sess){const cn=el('button','x','Cancelar sessão');cn.style.color='#ff8a8a';cn.onclick=()=>ask(cn,()=>{cancelT();renderFoc()});ctl.append(cn)}
   const add=el('div','frow');[1,5,15].forEach(m=>{const b=el('button','tmb s','+ '+m+'min');b.onclick=()=>{foc.goalMin+=m;renderFoc()};add.append(b)});
@@ -718,7 +827,7 @@ function renderDisc(){
   mi.onkeydown=e=>{if(e.key==='Enter'&&mi.value){const l=logOf(d),k=iso(new Date());l[k]=Math.max(0,(l[k]||0)+Number(mi.value)*60);dsave();renderDisc()}};
   tm.append(ti0,bt);
   if(sess){
-    const sv=el('button','tmb ok','✔ Salvar');sv.onclick=()=>{saveT();renderDisc()};
+    const sv=el('button','tmb ok','✔ Salvar');sv.onclick=()=>openReg();
     const cn=el('button','tmb cn','✖ Cancelar');cn.onclick=()=>ask(cn,()=>{cancelT();renderDisc()});
     tm.append(sv,cn);
   }
@@ -751,7 +860,7 @@ function renderDisc(){
   eb.append(el('h3',null,'📋 Edital verticalizado · '+dst.st+' de '+dst.n+' tópicos ('+pcg+'%)'));
   const pbar=el('div','gbar'),pf=el('div','gfill');pf.style.width=pcg+'%';pbar.append(pf);pbar.style.marginBottom='10px';eb.append(pbar);
   const tw=el('div','tw'),tb=el('table','ct'),hr=el('tr');
-  ['✔','Tópico','✓','✗','Total','%','Último estudo','Link'].forEach(x=>hr.append(el('th',null,x)));tb.append(hr);
+  ['✔','Tópico','Pág. inicial','Pág. final','Págs.','✓','✗','Total','%','Último estudo','Link'].forEach(x=>hr.append(el('th',null,x)));tb.append(hr);
   const bdg=(h,e)=>{const q=h+e,p=q?Math.round(h/q*100):0;return el('span','bdg '+(!q?'z':p>=80?'g':p>=60?'y':'r'),q?String(p):'–')};
   const td=(c,...n)=>{const x=el('td',c);x.append(...n);return x};
   d.topics.forEach(t=>{
@@ -762,20 +871,23 @@ function renderDisc(){
     const tsp=el('span','tnm',t.name);tsp.contentEditable='true';tsp.spellcheck=false;tsp.title='Clique para editar o tópico';
     tsp.onblur=()=>{const v=tsp.textContent.trim().toUpperCase();if(v&&v!==t.name){t.name=v;dsave();renderDisc()}else tsp.textContent=t.name};
     tsp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();tsp.blur()}else if(e.key==='Escape'){tsp.textContent=t.name;tsp.blur()}};
+    const pnum=k=>{const i=el('input','nm');i.type='number';i.min='0';i.value=t[k]||'';i.placeholder='–';i.onchange=()=>{t[k]=Math.max(0,parseInt(i.value,10)||0);dsave();renderDisc()};return i};
     let dc;
     if(t.studied){const di=el('input');di.type='date';di.value=t.studied;di.onchange=()=>{if(di.value){t.studied=di.value;dsave();renderDisc()}};dc=td('',di)}else dc=td('','-');
     const lc=td('');
     if(t.link){const a=el('a',null,'Abrir ↗');a.href=t.link;a.target='_blank';a.rel='noopener';const xe=el('button','x','✎');xe.title='Remover link';xe.onclick=()=>{t.link='';dsave();renderDisc()};lc.append(a,xe)}
     else{const b=el('button','x','Adicionar');b.onclick=()=>{const i=el('input','lk');i.type='text';i.placeholder='https://';b.replaceWith(i);i.focus();i.onblur=()=>{let v=i.value.trim();if(v&&!/^https?:\/\//i.test(v))v='https://'+v;t.link=v;dsave();renderDisc()};i.onkeydown=e=>{if(e.key==='Enter')i.blur()}};lc.append(b)}
-    tr.append(td('',cb),td('tn',tsp,dx),td('',num('h')),td('',num('e')),td('',String((t.h||0)+(t.e||0))),td('',bdg(t.h||0,t.e||0)),dc,lc);
+    tr.append(td('',cb),td('tn',tsp,dx),td('',pnum('pi')),td('',pnum('pf')),td('',String(npg(t)||'–')),td('',num('h')),td('',num('e')),td('',String((t.h||0)+(t.e||0))),td('',bdg(t.h||0,t.e||0)),dc,lc);
     tb.append(tr);
   });
   const fr=el('tr');
-  fr.append(td('',''),td('tn','TOTAL'),td('',String(dst.hi)),td('',String(dst.er)),td('',String(dst.q)),td('',bdg(dst.hi,dst.er)),td('',''),td('',''));
+  const tp=d.topics.reduce((a,t)=>a+npg(t),0),spg=d.topics.reduce((a,t)=>a+(t.studied?npg(t):0),0),pc2=td('',tp?spg+'/'+tp:'–');pc2.title='Páginas estudadas / total';
+  fr.append(td('',''),td('tn','TOTAL'),td(''),td(''),pc2,td('',String(dst.hi)),td('',String(dst.er)),td('',String(dst.q)),td('',bdg(dst.hi,dst.er)),td('',''),td('',''));
   tb.append(fr);tw.append(tb);
   const tin=el('input','ni');tin.placeholder='+ Adicionar tópico';
   tin.onkeydown=e=>{if(e.key==='Enter'&&tin.value.trim()){d.topics.push({id:uid(),name:tin.value.trim().toUpperCase(),studied:null,q:false,r:[0,0,0,0,0],h:0,e:0});dsave();renderDisc();const f=document.querySelector('#disc .blk input.ni');f&&f.focus()}};
   eb.append(tw,tin);g.append(eb);
+
 }
 
   // Revisão + calendário
@@ -1152,6 +1264,11 @@ if(useFB){
   lbtn.onclick=()=>{
     err.textContent='';
     const p=new firebase.auth.GoogleAuthProvider();
+    const sameDom=location.hostname===FB_CFG.authDomain;
+    const ios=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+    const sa=navigator.standalone||matchMedia('(display-mode: standalone)').matches;
+    if(sameDom&&(ios||sa)){auth.signInWithRedirect(p);return}
+    if(ios&&!sameDom)err.textContent='No iPhone, se o login não abrir, use o endereço https://concurso-1fe2d.firebaseapp.com no Safari.';
     auth.signInWithPopup(p).catch(e=>{
       if(['auth/popup-blocked','auth/operation-not-supported-in-this-environment','auth/web-storage-unsupported'].includes(e.code))auth.signInWithRedirect(p);
       else if(e.code!=='auth/popup-closed-by-user'&&e.code!=='auth/cancelled-popup-request')err.textContent='Falha no login: '+e.code;
