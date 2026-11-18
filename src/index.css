@@ -1,15 +1,30 @@
 @import "tailwindcss";
 
+/* Paleta inspirada no modelo de interface bancária: azul marinho e azul royal */
+@theme {
+  --color-blue-50: #eef4fb;
+  --color-blue-100: #dbe8f7;
+  --color-blue-200: #b9d2f0;
+  --color-blue-300: #8fb6e8;
+  --color-blue-400: #5f94dc;
+  --color-blue-500: #3b76cc;
+  --color-blue-600: #1f5fae;
+  --color-blue-700: #1a4d8f;
+  --color-blue-800: #163f75;
+  --color-blue-900: #0e2b52;
+  --color-blue-950: #081b37;
+}
+
 :root {
   --bg: #e8eef7;
   --col: #f4f5f7;
   --card: #ffffff;
   --tx: #1d2433;
   --mut: #6b778c;
-  --ac: #2f6fed;
+  --ac: #1f5fae;
   --bd: #d8dde6;
   --ph: #c7d7fb;
-  --grad: linear-gradient(135deg, #e6f1ff 0%, #bfdcff 50%, #8dbcff 100%);
+  --grad: linear-gradient(160deg, #eef4fb 0%, #dbe8f7 55%, #b9d2f0 100%);
 }
 
 :root[data-theme="dark"] {
@@ -18,10 +33,10 @@
   --card: #252e40;
   --tx: #e8ecf3;
   --mut: #93a0b8;
-  --ac: #6b98ff;
+  --ac: #5f94dc;
   --bd: #33405a;
   --ph: #2c3d68;
-  --grad: linear-gradient(135deg, #081428 0%, #0f2757 50%, #0e3f7d 100%);
+  --grad: linear-gradient(160deg, #081b37 0%, #0e2b52 55%, #163f75 100%);
   color-scheme: dark;
 }
 
@@ -32,10 +47,10 @@
     --card: #252e40;
     --tx: #e8ecf3;
     --mut: #93a0b8;
-    --ac: #6b98ff;
+    --ac: #5f94dc;
     --bd: #33405a;
     --ph: #2c3d68;
-    --grad: linear-gradient(135deg, #081428 0%, #0f2757 50%, #0e3f7d 100%);
+    --grad: linear-gradient(160deg, #081b37 0%, #0e2b52 55%, #163f75 100%);
     color-scheme: dark;
   }
 }
