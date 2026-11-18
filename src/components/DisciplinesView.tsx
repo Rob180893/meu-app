@@ -1,5 +1,11 @@
 import React, { useState } from 'react';
-import { ActiveRun, DiscState, Discipline, SubTopic, Topic } from '../types';
+import { ActiveRun, DiscState, Discipline, EditalDatas, SubTopic, Topic } from '../types';
+import {
+  EditalDatesForm,
+  EditalDatesResumo,
+  limparDatasEdital,
+  validarDatasEdital,
+} from './EditalDatesForm';
 import { markTopicSubs, syncTopicWithSubs } from '../utils/topics';
 import {
   addD,
@@ -166,13 +172,23 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
     onToast(`Disciplina "${cleanName}" adicionada ao ${curEd.name}.`);
   };
 
-  // Create a new edital from a name typed in the input
-  const handleAddEdital = (name: string) => {
+  // Estado dos formulários de edital (criação e datas)
+  const [showNovoEdital, setShowNovoEdital] = useState<boolean>(false);
+  const [novoEdNome, setNovoEdNome] = useState<string>('');
+  const [novoEdDatas, setNovoEdDatas] = useState<EditalDatas>({});
+  const [erroNovoEd, setErroNovoEd] = useState<string | null>(null);
+  const [showEditDatas, setShowEditDatas] = useState<boolean>(false);
+  const [editDatas, setEditDatas] = useState<EditalDatas>({});
+  const [erroEditDatas, setErroEditDatas] = useState<string | null>(null);
+
+  // Create a new edital from a name typed in the input (aceita datas opcionais)
+  const handleAddEdital = (name: string, datas?: EditalDatas) => {
     const clean = titleCase(name.trim());
     if (!clean) return;
     const newEd = {
       id: uid(),
       name: clean,
+      datas,
       list: [{ id: uid(), name: 'Disciplina 1', topics: [] }],
       cycles: [{ id: uid(), name: 'Ciclo 1', items: [], base: {}, n: 0 }],
     };
@@ -183,6 +199,45 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
       sel: newEd.list[0].id,
     }));
     onToast(`Edital "${clean}" cadastrado.`);
+  };
+
+  const criarEditalComDatas = () => {
+    const erro = validarDatasEdital(novoEdDatas);
+    if (erro) {
+      setErroNovoEd(erro);
+      return;
+    }
+    if (!novoEdNome.trim()) {
+      setErroNovoEd('Informe o nome do edital.');
+      return;
+    }
+    handleAddEdital(novoEdNome, limparDatasEdital(novoEdDatas));
+    setNovoEdNome('');
+    setNovoEdDatas({});
+    setErroNovoEd(null);
+    setShowNovoEdital(false);
+  };
+
+  const abrirEditarDatas = () => {
+    setEditDatas({ ...(curEd?.datas || {}) });
+    setErroEditDatas(null);
+    setShowEditDatas(true);
+  };
+
+  const salvarDatasEdital = () => {
+    const erro = validarDatasEdital(editDatas);
+    if (erro) {
+      setErroEditDatas(erro);
+      return;
+    }
+    const limpas = limparDatasEdital(editDatas);
+    onUpdateDiscState((prev) => ({
+      ...prev,
+      eds: prev.eds.map((ed) => (ed.id === prev.edsel ? { ...ed, datas: limpas } : ed)),
+    }));
+    setShowEditDatas(false);
+    setErroEditDatas(null);
+    onToast('Datas do edital salvas.');
   };
 
   // Rename the selected edital (works on tablets too: uses a simple prompt)
@@ -859,30 +914,21 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
               {e.name}
             </button>
           ))}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const input = e.currentTarget.elements.namedItem('novoEdital') as HTMLInputElement;
-              handleAddEdital(input.value);
-              input.value = '';
-            }}
-            className="inline-flex items-center gap-1"
+          <button
+            type="button"
+            onClick={() => setShowNovoEdital((v) => !v)}
+            className="px-3 py-1.5 rounded-full text-xs font-bold border border-dashed border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
           >
-            <input
-              name="novoEdital"
-              type="text"
-              enterKeyHint="done"
-              autoComplete="off"
-              placeholder="+ Novo edital"
-              className="px-3 py-1.5 rounded-full text-xs border border-dashed border-slate-300 dark:border-slate-600 bg-transparent text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-blue-500 w-32"
-            />
-            <button
-              type="submit"
-              className="px-2.5 py-1.5 rounded-full text-xs font-bold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 cursor-pointer"
-            >
-              Criar
-            </button>
-          </form>
+            + Novo edital
+          </button>
+          <button
+            type="button"
+            onClick={abrirEditarDatas}
+            className="px-2.5 py-1.5 rounded-full text-xs font-bold border border-amber-200 dark:border-amber-900 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 cursor-pointer"
+            title="Datas de inscrição, taxa e prova"
+          >
+            Datas do edital
+          </button>
           <button
             type="button"
             onClick={handleRenameEdital}
@@ -905,11 +951,82 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
         </div>
       </div>
 
+      {/* Painel: criar novo edital com datas */}
+      {showNovoEdital && (
+        <div className="p-4 rounded-3xl bg-white/80 dark:bg-slate-800/80 border border-dashed border-blue-300 dark:border-blue-800 space-y-4">
+          <div className="text-sm font-bold text-slate-800 dark:text-slate-100">Novo edital</div>
+          <input
+            type="text"
+            value={novoEdNome}
+            onChange={(e) => setNovoEdNome(e.target.value)}
+            placeholder="Nome do edital (ex: Polícia Federal 2026)"
+            autoComplete="off"
+            className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <EditalDatesForm value={novoEdDatas} onChange={setNovoEdDatas} />
+          <p className="text-[11px] text-slate-400">Todas as datas são opcionais.</p>
+          {erroNovoEd && <p className="text-xs font-semibold text-rose-600">{erroNovoEd}</p>}
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowNovoEdital(false);
+                setErroNovoEd(null);
+              }}
+              className="px-3 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={criarEditalComDatas}
+              className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+            >
+              Criar edital
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Painel: editar datas do edital selecionado */}
+      {showEditDatas && curEd && (
+        <div className="p-4 rounded-3xl bg-white/80 dark:bg-slate-800/80 border border-amber-200 dark:border-amber-900 space-y-4">
+          <div className="text-sm font-bold text-slate-800 dark:text-slate-100">
+            Datas do edital "{curEd.name}"
+          </div>
+          <EditalDatesForm value={editDatas} onChange={setEditDatas} />
+          {erroEditDatas && <p className="text-xs font-semibold text-rose-600">{erroEditDatas}</p>}
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowEditDatas(false);
+                setErroEditDatas(null);
+              }}
+              className="px-3 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={salvarDatasEdital}
+              className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white cursor-pointer"
+            >
+              Salvar datas
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!showEditDatas && <EditalDatesResumo datas={curEd?.datas} />}
+
       {/* 2. Top Disciplines Bar (within the selected Edital) */}
-      <div className="flex flex-wrap items-center gap-2 pb-3 border-b border-slate-200/60 dark:border-slate-800/60">
+      <div className="lg:flex lg:gap-6 lg:items-start">
+      <aside className="lg:w-64 lg:shrink-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pr-1">
+      <div className="flex flex-wrap lg:flex-col lg:flex-nowrap lg:items-stretch items-center gap-2 lg:gap-1.5 pb-3 lg:pb-0 border-b lg:border-b-0 border-slate-200/60 dark:border-slate-800/60">
         <button
           onClick={() => setViewMode('grid')}
-          className={`px-3.5 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition cursor-pointer ${
+          className={`px-3.5 py-1.5 rounded-full lg:rounded-xl lg:py-2.5 lg:w-full lg:text-left text-xs font-bold uppercase tracking-wider transition cursor-pointer ${
             viewMode === 'grid'
               ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-500/20'
               : 'bg-white/80 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -928,7 +1045,7 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
                 onUpdateDiscState((prev) => ({ ...prev, sel: d.id }));
                 setViewMode('det');
               }}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3.5 py-1.5 rounded-full lg:rounded-xl lg:py-2.5 lg:w-full lg:text-left text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                 isSelected
                   ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-500/20'
                   : 'bg-white/80 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -949,7 +1066,7 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
             handleAddDiscipline(input.value);
             input.value = '';
           }}
-          className="inline-flex items-center gap-1"
+          className="inline-flex items-center gap-1 lg:flex lg:flex-col lg:items-stretch lg:w-full"
         >
           <input
             name="novaDisciplina"
@@ -957,16 +1074,19 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
             enterKeyHint="done"
             autoComplete="off"
             placeholder="+ Nova disciplina"
-            className="px-3 py-1.5 rounded-full text-xs border border-dashed border-slate-300 dark:border-slate-700 bg-transparent text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-blue-500 w-36 sm:w-44"
+            className="px-3 py-1.5 rounded-full lg:rounded-xl lg:w-full text-xs border border-dashed border-slate-300 dark:border-slate-700 bg-transparent text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-blue-500 w-36 sm:w-44"
           />
           <button
             type="submit"
-            className="px-2.5 py-1.5 rounded-full text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+            className="px-2.5 py-1.5 rounded-full lg:rounded-xl lg:w-full lg:py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
           >
             Adicionar
           </button>
         </form>
       </div>
+      </aside>
+
+      <div className="flex-1 min-w-0 space-y-6">
 
       {/* GRID OVERVIEW VIEW */}
       {viewMode === 'grid' && (
@@ -2837,6 +2957,8 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
           </div>
         </div>
       )}
+      </div>
+      </div>
     </div>
   );
 };

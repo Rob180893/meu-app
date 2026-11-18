@@ -90,9 +90,17 @@ export interface StudyCycle {
   n: number; // completed cycles count
 }
 
+export interface EditalDatas {
+  inscricaoInicio?: string; // ISO YYYY-MM-DD
+  inscricaoFim?: string;
+  taxa?: string; // data do pagamento da taxa
+  prova?: string; // data da prova
+}
+
 export interface Edital {
   id: string;
   name: string;
+  datas?: EditalDatas;
   list: Discipline[];
   cycles?: StudyCycle[];
   csel?: string;

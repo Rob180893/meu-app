@@ -24,6 +24,12 @@ import {
 import { iso } from './utils/formatters';
 import { Header, TabKey } from './components/Header';
 import { HomeView } from './components/HomeView';
+import { HomeViewClassic } from './components/HomeViewClassic';
+import { AvisoProximaDisciplina } from './components/AvisoProximaDisciplina';
+import { calcularAviso } from './utils/alerts';
+
+// Interruptor do painel inicial: true = layout novo, false = layout original (clássico)
+const USE_NEW_DASHBOARD = true;
 import { KanbanView } from './components/KanbanView';
 import { DisciplinesView } from './components/DisciplinesView';
 import { CycleView } from './components/CycleView';
@@ -65,6 +71,7 @@ export default function App() {
   const [isFocusModalOpen, setIsFocusModalOpen] = useState<boolean>(false);
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [avisosFechados, setAvisosFechados] = useState<string[]>([]);
 
   // Sync theme attribute on documentElement
   useEffect(() => {
@@ -487,19 +494,22 @@ export default function App() {
       {/* Main Content Area */}
       <main className="flex-1 transition-all duration-300 min-w-0 px-4 sm:px-6 lg:px-8 py-5 pb-24 pt-16 sm:pt-16">
         <div className="max-w-7xl mx-auto">
-          {currentTab === 'h' && (
-            <HomeView
-              discState={discState}
-              onUpdateDiscState={setDiscState}
-              onNavigateToDiscipline={(dId) => {
-                setDiscState((prev) => ({ ...prev, sel: dId }));
-                setCurrentTab('d');
-              }}
-              onToast={showToast}
-              currentElapsedSeconds={currentElapsedSeconds}
-              onOpenRegisterModal={handleOpenRegister}
-            />
-          )}
+          {currentTab === 'h' && (() => {
+            const HomeComponent = USE_NEW_DASHBOARD ? HomeView : HomeViewClassic;
+            return (
+              <HomeComponent
+                discState={discState}
+                onUpdateDiscState={setDiscState}
+                onNavigateToDiscipline={(dId) => {
+                  setDiscState((prev) => ({ ...prev, sel: dId }));
+                  setCurrentTab('d');
+                }}
+                onToast={showToast}
+                currentElapsedSeconds={currentElapsedSeconds}
+                onOpenRegisterModal={handleOpenRegister}
+              />
+            );
+          })()}
 
           {currentTab === 'q' && (
             <KanbanView
@@ -607,6 +617,24 @@ export default function App() {
       />
 
       {/* Toast Feedback Notification */}
+      <AvisoProximaDisciplina
+        aviso={(() => {
+          const a = calcularAviso(
+            discState,
+            activeRun,
+            currentElapsedSeconds,
+            iso(new Date())
+          );
+          return a && !avisosFechados.includes(a.key) ? a : null;
+        })()}
+        onFechar={(key) => setAvisosFechados((prev) => [...prev, key])}
+        onIniciarProxima={(id) => {
+          const aviso = calcularAviso(discState, activeRun, currentElapsedSeconds, iso(new Date()));
+          if (aviso) setAvisosFechados((prev) => [...prev, aviso.key]);
+          handleStartSession(id);
+          showToast('Próxima disciplina iniciada.');
+        }}
+      />
       <Toast message={toastMessage} />
     </div>
   );

@@ -1,30 +1,21 @@
 import React, { useState } from 'react';
-import { DiscState, Discipline, StudyReminder } from '../types';
+import { DiscState } from '../types';
+import { addD, fmt, getDailyVerse, hm, iso, shortT } from '../utils/formatters';
 import {
-  addD,
-  fmt,
-  getDailyVerse,
-  hm,
-  iso,
-  shortT,
-  uid,
-} from '../utils/formatters';
-import {
-  Clock,
-  Target,
   BookOpen,
   CheckCircle2,
-  Calendar,
-  Flame,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
+  Calendar,
+  Clock,
   Edit2,
-  Check,
-  Trash2,
-  Plus,
+  Flame,
   Layers,
+  Plus,
   Sparkles,
+  Target,
+  TrendingUp,
+  Trophy,
 } from 'lucide-react';
 
 interface HomeViewProps {
@@ -35,6 +26,73 @@ interface HomeViewProps {
   currentElapsedSeconds: number;
   onOpenRegisterModal?: () => void;
 }
+
+/* Anel de progresso circular (SVG puro) */
+const Ring: React.FC<{
+  pct: number;
+  size?: number;
+  stroke?: number;
+  color: string;
+  children?: React.ReactNode;
+}> = ({ pct, size = 96, stroke = 9, color, children }) => {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const offset = c - (Math.min(100, Math.max(0, pct)) / 100) * c;
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          strokeWidth={stroke}
+          className="stroke-slate-200/70 dark:stroke-slate-700/70"
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          stroke={color}
+          strokeDasharray={c}
+          strokeDashoffset={offset}
+          className="transition-all duration-700"
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">{children}</div>
+    </div>
+  );
+};
+
+const WEEKDAY_NAMES = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+
+const DATAS_LABELS: { key: 'inscricaoInicio' | 'inscricaoFim' | 'taxa' | 'prova'; label: string }[] = [
+  { key: 'inscricaoInicio', label: 'Início das inscrições' },
+  { key: 'inscricaoFim', label: 'Fim das inscrições' },
+  { key: 'taxa', label: 'Pagamento da taxa' },
+  { key: 'prova', label: 'Data da prova' },
+];
+
+const diasAte = (s: string): number => {
+  const [y, m, d] = s.split('-').map(Number);
+  const alvo = new Date(y, m - 1, d).getTime();
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  return Math.round((alvo - hoje.getTime()) / 86400000);
+};
+
+const textoContagem = (n: number): string => {
+  if (n < 0) return 'já passou';
+  if (n === 0) return 'hoje';
+  if (n === 1) return 'amanhã';
+  return `faltam ${n} dias`;
+};
+
+const card =
+  'rounded-3xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 shadow-sm backdrop-blur-sm';
 
 export const HomeView: React.FC<HomeViewProps> = ({
   discState,
@@ -49,15 +107,11 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const todayIso = iso(new Date());
 
   const [homeWeekOffset, setHomeWeekOffset] = useState<number>(0);
-  const [chartMetric, setChartMetric] = useState<'t' | 'q'>('t'); // 't' = tempo, 'q' = questões
+  const [chartMetric, setChartMetric] = useState<'t' | 'q'>('t');
   const [isEditingGoals, setIsEditingGoals] = useState<boolean>(false);
-  const [showStreakDetails, setShowStreakDetails] = useState<boolean>(true);
-  const [newReminderText, setNewReminderText] = useState<string>('');
 
-  // Daily quote
   const dailyVerse = getDailyVerse();
 
-  // Calculate day seconds
   const getDaySeconds = (dayKey: string) => {
     let total = 0;
     disciplines.forEach((d) => {
@@ -69,11 +123,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
     return total;
   };
 
-  const getDayQuestions = (dayKey: string) => {
-    return (discState.qlog && discState.qlog[dayKey]) || 0;
-  };
+  const getDayQuestions = (dayKey: string) => (discState.qlog && discState.qlog[dayKey]) || 0;
 
-  // Aggregate stats across current edital
+  // Totais gerais do edital
   let totalSeconds = 0;
   let totalTopics = 0;
   let completedTopics = 0;
@@ -86,7 +138,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
       if (t.studied) completedTopics++;
       totalHits += t.h || 0;
       totalErrors += t.e || 0;
-
       (t.subs || []).forEach((sb) => {
         totalTopics++;
         if (sb.studied || sb.done) completedTopics++;
@@ -94,39 +145,33 @@ export const HomeView: React.FC<HomeViewProps> = ({
         totalErrors += sb.e || 0;
       });
     });
-
     Object.values(d.log || {}).forEach((s) => {
       totalSeconds += s;
     });
   });
 
-  if (discState.run?.start) {
-    totalSeconds += currentElapsedSeconds;
-  }
+  if (discState.run?.start) totalSeconds += currentElapsedSeconds;
 
   const totalQuestions = totalHits + totalErrors;
   const overallAccuracy = totalQuestions > 0 ? Math.round((totalHits / totalQuestions) * 100) : 0;
   const overallProgress = totalTopics > 0 ? Math.round((completedTopics / totalTopics) * 100) : 0;
 
-  // 30 Days Streak Calculation
+  // Sequência (streak)
   const streakDays: string[] = [];
-  for (let i = 29; i >= 0; i--) {
-    streakDays.push(addD(todayIso, -i));
-  }
+  for (let i = 29; i >= 0; i--) streakDays.push(addD(todayIso, -i));
 
   let currentStreak = 0;
   for (let i = streakDays.length - 1; i >= 0; i--) {
     const s = getDaySeconds(streakDays[i]);
-    if (s > 0) {
-      currentStreak++;
-    } else if (streakDays[i] === todayIso) {
-      continue;
-    } else {
-      break;
-    }
+    if (s > 0) currentStreak++;
+    else if (streakDays[i] === todayIso) continue;
+    else break;
   }
 
-  // Weekly Goal Calculation
+  const last7 = streakDays.slice(-7);
+  const studiedToday = getDaySeconds(todayIso) > 0;
+
+  // Semana
   const getMonday = (offset: number) => {
     const dt = new Date();
     dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7) + offset * 7);
@@ -141,20 +186,52 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const weekHoursPct = Math.min(100, (weekTotalSeconds / 3600 / goals.h) * 100);
   const weekQuestionsPct = Math.min(100, (weekTotalQuestions / goals.q) * 100);
 
-  // Weekly Chart Data
-  const chartWeekDays = Array.from({ length: 7 }, (_, i) =>
-    addD(getMonday(homeWeekOffset), i)
-  );
+  // Gráfico semanal
+  const chartWeekDays = Array.from({ length: 7 }, (_, i) => addD(getMonday(homeWeekOffset), i));
   const chartValues = chartWeekDays.map((k) =>
     chartMetric === 't' ? getDaySeconds(k) : getDayQuestions(k)
   );
-  const maxChartVal = Math.max(
-    ...chartValues,
-    chartMetric === 't' ? 3600 : 1
-  );
-  const WEEKDAY_NAMES = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+  const maxChartVal = Math.max(...chartValues, chartMetric === 't' ? 3600 : 1);
+  const chartTotal = chartValues.reduce((a, b) => a + b, 0);
+  const bestIdx = chartValues.indexOf(Math.max(...chartValues));
 
-  // Handlers for Edital Management
+  // Progresso por disciplina
+  const discStats = disciplines.map((d) => {
+    let dSec = 0;
+    let dHits = 0;
+    let dErrors = 0;
+    let dTotal = 0;
+    let dDone = 0;
+
+    Object.values(d.log || {}).forEach((s) => (dSec += s));
+    if (discState.run?.start && discState.run.id === d.id) dSec += currentElapsedSeconds;
+
+    d.topics.forEach((t) => {
+      dTotal++;
+      if (t.studied) dDone++;
+      dHits += t.h || 0;
+      dErrors += t.e || 0;
+      (t.subs || []).forEach((sb) => {
+        dTotal++;
+        if (sb.studied || sb.done) dDone++;
+        dHits += sb.h || 0;
+        dErrors += sb.e || 0;
+      });
+    });
+
+    const q = dHits + dErrors;
+    return {
+      d,
+      dSec,
+      dHits,
+      dErrors,
+      q,
+      acc: q > 0 ? Math.round((dHits / q) * 100) : 0,
+      pct: dTotal > 0 ? Math.round((dDone / dTotal) * 100) : 0,
+    };
+  });
+
+  // Ações de edital
   const handleSelectEdital = (editalId: string) => {
     onUpdateDiscState((prev) => {
       const targetEd = prev.eds.find((e) => e.id === editalId) || prev.eds[0];
@@ -166,66 +243,43 @@ export const HomeView: React.FC<HomeViewProps> = ({
     });
   };
 
-  const handleAddEdital = (name: string) => {
-    const cleanName = name.trim();
-    if (!cleanName) return;
-    const newEd: any = {
-      id: uid(),
-      name: cleanName,
-      list: [{ id: uid(), name: 'Disciplina 1', topics: [] }],
-      cycles: [
-        {
-          id: uid(),
-          name: 'Ciclo 1',
-          items: [],
-          base: {},
-          n: 0,
-        },
-      ],
-    };
-    newEd.csel = newEd.cycles[0].id;
-
-    onUpdateDiscState((prev) => ({
-      ...prev,
-      eds: [...prev.eds, newEd],
-      edsel: newEd.id,
-      sel: newEd.list[0].id,
-    }));
-    onToast(`Edital "${cleanName}" criado.`);
-  };
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
 
   return (
     <div className="space-y-6">
-      {/* Top Header & Actions (Matching Image 1) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/60 dark:border-slate-800/60">
+      {/* CABEÇALHO */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-            Home
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400">
+            {greeting}
+          </p>
+          <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 dark:text-white mt-1">
+            {curEd?.name || 'Meu concurso'}
           </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Acompanhe seu desempenho, constância e metas
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+            {studiedToday
+              ? 'Você já estudou hoje. Continue assim!'
+              : 'Ainda não estudou hoje. Que tal começar agora?'}
           </p>
         </div>
 
-        {/* Top Right: "Adicionar Estudo" + Edital Selector (Matching Image 1) */}
         <div className="flex items-center gap-2 flex-wrap">
           {onOpenRegisterModal && (
             <button
               onClick={onOpenRegisterModal}
-              className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold uppercase tracking-wider transition shadow-sm cursor-pointer flex items-center gap-1.5"
+              className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white text-xs font-bold uppercase tracking-wider transition shadow-md shadow-emerald-500/20 cursor-pointer flex items-center gap-1.5"
             >
               <Plus className="w-4 h-4" />
-              <span>Adicionar Estudo</span>
+              <span>Adicionar estudo</span>
             </button>
           )}
-
-          {/* Edital Selector Dropdown / Pills */}
-          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-white/90 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-2xs">
-            <Layers className="w-3.5 h-3.5 text-emerald-600 ml-1.5" />
+          <div className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-white/90 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm">
+            <Layers className="w-3.5 h-3.5 text-emerald-600" />
             <select
               value={discState.edsel}
               onChange={(e) => handleSelectEdital(e.target.value)}
-              className="text-xs font-bold text-slate-800 dark:text-slate-100 bg-transparent pr-2 py-1 outline-none cursor-pointer"
+              className="text-xs font-bold text-slate-800 dark:text-slate-100 bg-transparent pr-1 outline-none cursor-pointer"
             >
               {discState.eds.map((e) => (
                 <option key={e.id} value={e.id}>
@@ -237,383 +291,93 @@ export const HomeView: React.FC<HomeViewProps> = ({
         </div>
       </div>
 
-      {/* Main Metric Cards Grid (Matching Image 1) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* TEMPO DE ESTUDO */}
-        <div className="p-4 rounded-3xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between min-h-[125px]">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-            Tempo de Estudo
-          </span>
-          <div className="text-3xl font-black text-slate-900 dark:text-white mt-auto">
-            {hm(totalSeconds)}
-          </div>
-        </div>
+      {/* HERO: resumo + sequência */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2 relative overflow-hidden rounded-3xl p-6 sm:p-7 text-white bg-gradient-to-br from-emerald-500 via-teal-600 to-slate-800 shadow-lg shadow-emerald-900/20">
+          <div className="absolute -right-10 -top-10 w-56 h-56 rounded-full bg-white/10 blur-2xl pointer-events-none" />
+          <div className="absolute -right-4 -bottom-16 w-40 h-40 rounded-full bg-white/5 pointer-events-none" />
 
-        {/* DESEMPENHO */}
-        <div className="p-4 rounded-3xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between min-h-[125px]">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-            Desempenho
-          </span>
-          <div className="flex items-end justify-between mt-auto">
-            <div className="space-y-0.5 text-xs font-semibold">
-              <div className="text-emerald-600 dark:text-emerald-400 font-bold">
-                {totalHits} Acertos
+          <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+            <div>
+              <div className="flex items-center gap-2 text-emerald-100 text-xs font-bold uppercase tracking-wider">
+                <Clock className="w-3.5 h-3.5" />
+                Tempo total de estudo
               </div>
-              <div className="text-rose-600 dark:text-rose-400 font-bold">
-                {totalErrors} Erros
+              <div className="text-5xl sm:text-6xl font-black tracking-tight mt-2 font-mono">
+                {hm(totalSeconds)}
               </div>
-            </div>
-            <div className="text-3xl font-black text-slate-900 dark:text-white">
-              {overallAccuracy}%
-            </div>
-          </div>
-        </div>
-
-        {/* PROGRESSO NO EDITAL */}
-        <div className="p-4 rounded-3xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between min-h-[125px]">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-            Progresso no Edital
-          </span>
-          <div className="flex items-end justify-between mt-auto">
-            <div className="space-y-0.5 text-xs font-semibold">
-              <div className="text-emerald-600 dark:text-emerald-400 font-bold">
-                {completedTopics} Tópicos Concluídos
-              </div>
-              <div className="text-slate-400">
-                {Math.max(0, totalTopics - completedTopics)} Tópicos Pendentes
+              <div className="flex flex-wrap gap-2 mt-4">
+                <span className="px-2.5 py-1 rounded-full bg-white/15 text-xs font-bold backdrop-blur-sm">
+                  {totalQuestions} questões
+                </span>
+                <span className="px-2.5 py-1 rounded-full bg-white/15 text-xs font-bold backdrop-blur-sm">
+                  {completedTopics}/{totalTopics} tópicos
+                </span>
+                <span className="px-2.5 py-1 rounded-full bg-white/15 text-xs font-bold backdrop-blur-sm">
+                  {discCountLabel(disciplines.length)}
+                </span>
               </div>
             </div>
-            <div className="text-3xl font-black text-slate-900 dark:text-white">
-              {overallProgress}%
-            </div>
-          </div>
-        </div>
 
-        {/* Quote Card (Matching Image 1) */}
-        <div className="p-4 rounded-3xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between min-h-[125px]">
-          <p className="text-xs italic text-slate-700 dark:text-slate-200 line-clamp-3 leading-relaxed">
-            "{dailyVerse[0]}"
-          </p>
-          <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 mt-2 text-right">
-            — {dailyVerse[1]}
-          </div>
-        </div>
-      </div>
-
-      {/* CONSTÂNCIA NOS ESTUDOS (Matching Image 1) */}
-      <div className="p-5 rounded-3xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-800 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-              Constância nos Estudos
-            </div>
-            <div className="text-sm font-bold text-slate-800 dark:text-slate-100 mt-0.5">
-              Você está há{' '}
-              <span className="text-emerald-600 dark:text-emerald-400 font-extrabold">
-                {currentStreak} {currentStreak === 1 ? 'dia' : 'dias'}
-              </span>{' '}
-              sem falhar!
-            </div>
-          </div>
-          <button
-            onClick={() => setShowStreakDetails(!showStreakDetails)}
-            className="p-1.5 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 transition cursor-pointer"
-            title="Mostrar / ocultar sequência"
-          >
-            <ChevronDown className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Heatmap / Streak Grid */}
-        {showStreakDetails && (
-          <div className="grid grid-cols-15 sm:grid-cols-30 gap-1.5 pt-1">
-            {streakDays.map((k) => {
-              const sec = getDaySeconds(k);
-              const hasStudied = sec > 0;
-              const isToday = k === todayIso;
-
-              return (
-                <div
-                  key={k}
-                  title={`${fmt(k)}${hasStudied ? ` • ${shortT(sec)}` : ' • sem estudo'}`}
-                  className={`h-6 rounded-md flex items-center justify-center text-[10px] font-bold transition-all ${
-                    hasStudied
-                      ? 'bg-emerald-500 text-white shadow-xs'
-                      : isToday
-                      ? 'bg-slate-100 dark:bg-slate-700 text-slate-400 border border-dashed border-emerald-400'
-                      : 'bg-slate-100 dark:bg-slate-800/80 text-slate-300 dark:text-slate-600'
-                  }`}
-                >
-                  {hasStudied ? '✓' : ''}
+            <div className="flex items-center gap-4">
+              <Ring pct={overallProgress} size={112} stroke={11} color="#ffffff">
+                <div className="text-center">
+                  <div className="text-2xl font-black leading-none">{overallProgress}%</div>
+                  <div className="text-[9px] font-bold uppercase tracking-wider text-emerald-100 mt-1">
+                    edital
+                  </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Main Two-Column Layout: PAINEL on Left + METAS & ESTUDO SEMANAL on Right (Matching Image 1) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Column: PAINEL DE DISCIPLINAS (7 cols) */}
-        <div className="lg:col-span-7 space-y-6">
-          <div className="p-5 rounded-3xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800 dark:text-slate-100 mb-3.5">
-              Painel
-            </h3>
-
-            <div className="overflow-x-auto -mx-2">
-              <table className="w-full text-xs text-left border-collapse min-w-[550px]">
-                <thead>
-                  <tr className="border-b border-slate-200 dark:border-slate-700 text-slate-400 uppercase font-semibold">
-                    <th className="py-2.5 px-3">Disciplinas</th>
-                    <th className="py-2.5 px-2 text-right">Tempo</th>
-                    <th className="py-2.5 px-2 text-center text-emerald-600">✓</th>
-                    <th className="py-2.5 px-2 text-center text-rose-600">✗</th>
-                    <th className="py-2.5 px-2 text-center">📝</th>
-                    <th className="py-2.5 px-2 text-center">%</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {disciplines.map((d) => {
-                    let dSec = 0;
-                    let dHits = 0;
-                    let dErrors = 0;
-
-                    Object.values(d.log || {}).forEach((s) => (dSec += s));
-                    if (discState.run?.start && discState.run.id === d.id) {
-                      dSec += currentElapsedSeconds;
-                    }
-
-                    d.topics.forEach((t) => {
-                      dHits += t.h || 0;
-                      dErrors += t.e || 0;
-                      (t.subs || []).forEach((sb) => {
-                        dHits += sb.h || 0;
-                        dErrors += sb.e || 0;
-                      });
-                    });
-
-                    const dTotalQ = dHits + dErrors;
-                    const dAcc = dTotalQ > 0 ? Math.round((dHits / dTotalQ) * 100) : 0;
-
-                    return (
-                      <tr
-                        key={d.id}
-                        onClick={() => onNavigateToDiscipline(d.id)}
-                        className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition cursor-pointer"
-                      >
-                        <td className="py-3 px-3 font-bold text-emerald-700 dark:text-emerald-400 uppercase">
-                          {d.name}
-                        </td>
-                        <td className="py-3 px-2 text-right font-mono text-slate-600 dark:text-slate-300">
-                          {dSec > 0 ? hm(dSec) : '–'}
-                        </td>
-                        <td className="py-3 px-2 text-center font-bold text-emerald-600">
-                          {dHits}
-                        </td>
-                        <td className="py-3 px-2 text-center font-bold text-rose-600">
-                          {dErrors}
-                        </td>
-                        <td className="py-3 px-2 text-center font-bold text-slate-700 dark:text-slate-300">
-                          {dTotalQ}
-                        </td>
-                        <td className="py-3 px-2 text-center">
-                          <span
-                            className={`px-2 py-0.5 rounded-md font-bold text-[11px] ${
-                              dTotalQ === 0
-                                ? 'text-slate-400'
-                                : dAcc >= 80
-                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300'
-                                : dAcc >= 60
-                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300'
-                                : 'bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-300'
-                            }`}
-                          >
-                            {dTotalQ === 0 ? '0' : `${dAcc}%`}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column: METAS & ESTUDO SEMANAL (5 cols) (Matching Image 1) */}
-        <div className="lg:col-span-5 space-y-6">
-          {/* METAS DE ESTUDO SEMANAL */}
-          <div className="p-5 rounded-3xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800 dark:text-slate-100">
-                Metas de Estudo Semanal
-              </h3>
-              <button
-                onClick={() => setIsEditingGoals(!isEditingGoals)}
-                className="p-1 rounded text-slate-400 hover:text-emerald-600"
-                title="Editar metas"
-              >
-                <Edit2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {isEditingGoals ? (
-              <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900 space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold">Meta de Horas:</span>
-                  <input
-                    type="number"
-                    min="1"
-                    defaultValue={goals.h}
-                    onBlur={(e) => {
-                      const val = parseInt(e.target.value) || 20;
-                      onUpdateDiscState((prev) => ({
-                        ...prev,
-                        goals: { ...(prev.goals || { h: 20, q: 100 }), h: val },
-                      }));
-                    }}
-                    className="w-16 p-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-center font-bold"
-                  />
+              </Ring>
+              <div className="space-y-2 text-xs">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-200" />
+                  <span className="font-semibold">{completedTopics} concluídos</span>
                 </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold">Meta de Questões:</span>
-                  <input
-                    type="number"
-                    min="1"
-                    defaultValue={goals.q}
-                    onBlur={(e) => {
-                      const val = parseInt(e.target.value) || 100;
-                      onUpdateDiscState((prev) => ({
-                        ...prev,
-                        goals: { ...(prev.goals || { h: 20, q: 100 }), q: val },
-                      }));
-                    }}
-                    className="w-16 p-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-center font-bold"
-                  />
+                <div className="flex items-center gap-2">
+                  <BookOpen className="w-4 h-4 text-emerald-200" />
+                  <span className="font-semibold">{Math.max(0, totalTopics - completedTopics)} pendentes</span>
                 </div>
               </div>
-            ) : null}
+            </div>
+          </div>
+        </div>
 
-            {/* Hours Progress Bar */}
-            <div className="space-y-1.5">
-              <div className="flex justify-between text-xs">
-                <span className="font-mono text-slate-500">
-                  {hm(weekTotalSeconds)} / {goals.h}h00min
-                </span>
-                <span className="font-bold text-slate-700 dark:text-slate-300">
-                  Horas de Estudo
-                </span>
-              </div>
-              <div className="h-3 w-full bg-slate-100 dark:bg-slate-700/60 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-emerald-500 rounded-full transition-all duration-500"
-                  style={{ width: `${weekHoursPct}%` }}
-                />
+        {/* SEQUÊNCIA */}
+        <div className={`${card} p-6 flex flex-col justify-between`}>
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Sequência</div>
+              <div className="flex items-baseline gap-1.5 mt-1">
+                <span className="text-5xl font-black text-slate-900 dark:text-white">{currentStreak}</span>
+                <span className="text-sm font-semibold text-slate-500">{currentStreak === 1 ? 'dia' : 'dias'}</span>
               </div>
             </div>
-
-            {/* Questions Progress Bar */}
-            <div className="space-y-1.5">
-              <div className="flex justify-between text-xs">
-                <span className="font-mono text-slate-500">
-                  {weekTotalQuestions} / {goals.q}
-                </span>
-                <span className="font-bold text-slate-700 dark:text-slate-300">
-                  Questões
-                </span>
-              </div>
-              <div className="h-3 w-full bg-slate-100 dark:bg-slate-700/60 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-indigo-500 rounded-full transition-all duration-500"
-                  style={{ width: `${weekQuestionsPct}%` }}
-                />
-              </div>
+            <div className="p-2.5 rounded-2xl bg-orange-100 dark:bg-orange-900/40 text-orange-500">
+              <Flame className="w-6 h-6" />
             </div>
           </div>
 
-          {/* ESTUDO SEMANAL (Chart with [TEMPO] / [QUESTÕES] toggle) */}
-          <div className="p-5 rounded-3xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800 dark:text-slate-100">
-                Estudo Semanal
-              </h3>
-              <div className="flex items-center gap-1 text-xs text-slate-400 font-semibold">
-                <button
-                  onClick={() => setHomeWeekOffset((prev) => prev - 1)}
-                  className="p-1 hover:text-slate-700 dark:hover:text-white"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </button>
-                <span>
-                  {fmt(chartWeekDays[0])} – {fmt(chartWeekDays[6])}
-                </span>
-                <button
-                  onClick={() => setHomeWeekOffset((prev) => prev + 1)}
-                  className="p-1 hover:text-slate-700 dark:hover:text-white"
-                >
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Toggle TEMPO / QUESTÕES */}
-            <div className="flex justify-end gap-1.5">
-              <button
-                onClick={() => setChartMetric('t')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                  chartMetric === 't'
-                    ? 'bg-emerald-500 text-white shadow-xs'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                }`}
-              >
-                Tempo
-              </button>
-              <button
-                onClick={() => setChartMetric('q')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                  chartMetric === 'q'
-                    ? 'bg-emerald-500 text-white shadow-xs'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                }`}
-              >
-                Questões
-              </button>
-            </div>
-
-            {/* Bar Chart */}
-            <div className="h-40 flex items-end justify-between gap-2 pt-4 px-2">
-              {chartWeekDays.map((day, idx) => {
-                const val = chartValues[idx];
-                const heightPct = Math.max(8, (val / maxChartVal) * 100);
-                const isToday = day === todayIso;
-
+          <div className="mt-5">
+            <div className="flex justify-between gap-1.5">
+              {last7.map((k) => {
+                const sec = getDaySeconds(k);
+                const hit = sec > 0;
+                const isToday = k === todayIso;
                 return (
-                  <div
-                    key={day}
-                    className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end"
-                  >
-                    <span className="text-[10px] font-mono text-slate-400 font-bold">
-                      {chartMetric === 't'
-                        ? val > 0
-                          ? shortT(val)
-                          : ''
-                        : val > 0
-                        ? val
-                        : ''}
-                    </span>
-                    <div className="w-full bg-slate-100 dark:bg-slate-700/50 rounded-lg h-28 flex items-end overflow-hidden">
-                      <div
-                        className={`w-full rounded-lg transition-all duration-500 ${
-                          isToday
-                            ? 'bg-emerald-500'
-                            : 'bg-emerald-400/80 dark:bg-emerald-600/80'
-                        }`}
-                        style={{ height: `${heightPct}%` }}
-                      />
+                  <div key={k} className="flex flex-col items-center gap-1.5 flex-1" title={`${fmt(k)}${hit ? ` • ${shortT(sec)}` : ''}`}>
+                    <div
+                      className={`w-full aspect-square max-w-[34px] rounded-xl flex items-center justify-center text-xs font-black transition ${
+                        hit
+                          ? 'bg-gradient-to-br from-orange-400 to-rose-500 text-white shadow-sm'
+                          : isToday
+                          ? 'border-2 border-dashed border-emerald-400 text-emerald-500'
+                          : 'bg-slate-100 dark:bg-slate-700/60 text-slate-300 dark:text-slate-500'
+                      }`}
+                    >
+                      {hit ? <Flame className="w-3.5 h-3.5" /> : isToday ? '•' : ''}
                     </div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">
-                      {WEEKDAY_NAMES[idx]}
+                    <span className={`text-[10px] font-bold uppercase ${isToday ? 'text-emerald-500' : 'text-slate-400'}`}>
+                      {WEEKDAY_NAMES[(new Date(k + 'T12:00:00').getDay() + 6) % 7]}
                     </span>
                   </div>
                 );
@@ -622,6 +386,338 @@ export const HomeView: React.FC<HomeViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* DATAS IMPORTANTES */}
+      <div className={`${card} p-6`}>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">Datas importantes</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Inscrições, taxa e prova deste edital</p>
+          </div>
+          <Calendar className="w-5 h-5 text-blue-500" />
+        </div>
+        {(() => {
+          const datas = curEd?.datas || {};
+          const itens = DATAS_LABELS.filter((x) => datas[x.key]);
+          if (itens.length === 0) {
+            return (
+              <p className="text-sm text-slate-500">
+                Nenhuma data cadastrada. Adicione na aba Disciplinas, em "Datas do edital".
+              </p>
+            );
+          }
+          return (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+              {itens.map((x) => {
+                const valor = datas[x.key] as string;
+                const n = diasAte(valor);
+                const [y, m, d] = valor.split('-');
+                return (
+                  <div
+                    key={x.key}
+                    className={`p-4 rounded-2xl border ${
+                      n >= 0 && n <= 7
+                        ? 'bg-amber-50 border-amber-300 dark:bg-amber-950/30 dark:border-amber-800'
+                        : 'bg-slate-50 border-slate-200/70 dark:bg-slate-900/40 dark:border-slate-700/70'
+                    }`}
+                  >
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{x.label}</div>
+                    <div className="text-xl font-black text-slate-900 dark:text-white mt-1 font-mono">
+                      {d}/{m}/{y}
+                    </div>
+                    <div className={`text-xs font-semibold mt-1 ${n >= 0 && n <= 7 ? 'text-amber-700 dark:text-amber-400' : 'text-slate-500'}`}>
+                      {textoContagem(n)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className={`${card} p-5`}>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Acertos</span>
+            <Trophy className="w-4 h-4 text-emerald-500" />
+          </div>
+          <div className="text-3xl font-black text-emerald-600 dark:text-emerald-400 mt-3">{totalHits}</div>
+          <div className="text-xs text-slate-500 mt-1">de {totalQuestions} questões</div>
+        </div>
+
+        <div className={`${card} p-5`}>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Erros</span>
+            <Target className="w-4 h-4 text-rose-500" />
+          </div>
+          <div className="text-3xl font-black text-rose-600 dark:text-rose-400 mt-3">{totalErrors}</div>
+          <div className="text-xs text-slate-500 mt-1">para revisar</div>
+        </div>
+
+        <div className={`${card} p-5`}>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Aproveitamento</span>
+            <TrendingUp className="w-4 h-4 text-indigo-500" />
+          </div>
+          <div className="text-3xl font-black text-slate-900 dark:text-white mt-3">{overallAccuracy}%</div>
+          <div className="mt-2 h-1.5 w-full bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+            <div className="h-full bg-indigo-500 rounded-full transition-all duration-700" style={{ width: `${overallAccuracy}%` }} />
+          </div>
+        </div>
+
+        <div className={`${card} p-5 flex flex-col`}>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Versículo do dia</span>
+            <Sparkles className="w-4 h-4 text-amber-500" />
+          </div>
+          <p className="text-xs italic text-slate-700 dark:text-slate-200 leading-relaxed mt-2 line-clamp-3">
+            "{dailyVerse[0]}"
+          </p>
+          <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 mt-auto pt-2 text-right">
+            — {dailyVerse[1]}
+          </div>
+        </div>
+      </div>
+
+      {/* METAS + GRÁFICO SEMANAL */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Metas */}
+        <div className={`${card} lg:col-span-5 p-6 space-y-5`}>
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">Metas da semana</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Seu ritmo até agora</p>
+            </div>
+            <button
+              onClick={() => setIsEditingGoals(!isEditingGoals)}
+              className="p-2 rounded-xl text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition"
+              title="Editar metas"
+            >
+              <Edit2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {isEditingGoals && (
+            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold">Meta de horas:</span>
+                <input
+                  type="number"
+                  min="1"
+                  defaultValue={goals.h}
+                  onBlur={(e) => {
+                    const val = parseInt(e.target.value) || 20;
+                    onUpdateDiscState((prev) => ({
+                      ...prev,
+                      goals: { ...(prev.goals || { h: 20, q: 100 }), h: val },
+                    }));
+                  }}
+                  className="w-16 p-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-center font-bold"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold">Meta de questões:</span>
+                <input
+                  type="number"
+                  min="1"
+                  defaultValue={goals.q}
+                  onBlur={(e) => {
+                    const val = parseInt(e.target.value) || 100;
+                    onUpdateDiscState((prev) => ({
+                      ...prev,
+                      goals: { ...(prev.goals || { h: 20, q: 100 }), q: val },
+                    }));
+                  }}
+                  className="w-16 p-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-center font-bold"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-around gap-4">
+            <div className="flex flex-col items-center gap-2">
+              <Ring pct={weekHoursPct} color="#10b981">
+                <div className="text-center">
+                  <div className="text-lg font-black text-slate-900 dark:text-white leading-none">{Math.round(weekHoursPct)}%</div>
+                </div>
+              </Ring>
+              <div className="text-center">
+                <div className="text-xs font-bold text-slate-800 dark:text-slate-100">Horas</div>
+                <div className="text-[11px] font-mono text-slate-500">
+                  {hm(weekTotalSeconds)} / {goals.h}h
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col items-center gap-2">
+              <Ring pct={weekQuestionsPct} color="#6366f1">
+                <div className="text-center">
+                  <div className="text-lg font-black text-slate-900 dark:text-white leading-none">{Math.round(weekQuestionsPct)}%</div>
+                </div>
+              </Ring>
+              <div className="text-center">
+                <div className="text-xs font-bold text-slate-800 dark:text-slate-100">Questões</div>
+                <div className="text-[11px] font-mono text-slate-500">
+                  {weekTotalQuestions} / {goals.q}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Gráfico semanal */}
+        <div className={`${card} lg:col-span-7 p-6 space-y-5`}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">Estudo semanal</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Total no período:{' '}
+                <span className="font-bold text-slate-700 dark:text-slate-200">
+                  {chartMetric === 't' ? hm(chartTotal) : `${chartTotal} questões`}
+                </span>
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex p-1 rounded-xl bg-slate-100 dark:bg-slate-900/60">
+                <button
+                  onClick={() => setChartMetric('t')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    chartMetric === 't' ? 'bg-white dark:bg-slate-700 text-emerald-600 shadow-sm' : 'text-slate-500'
+                  }`}
+                >
+                  Tempo
+                </button>
+                <button
+                  onClick={() => setChartMetric('q')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    chartMetric === 'q' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm' : 'text-slate-500'
+                  }`}
+                >
+                  Questões
+                </button>
+              </div>
+              <div className="flex items-center gap-1 text-xs text-slate-500 font-semibold">
+                <button onClick={() => setHomeWeekOffset((p) => p - 1)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700">
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <span className="whitespace-nowrap">
+                  {fmt(chartWeekDays[0])} – {fmt(chartWeekDays[6])}
+                </span>
+                <button onClick={() => setHomeWeekOffset((p) => p + 1)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700">
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="h-44 flex items-end justify-between gap-2 px-1">
+            {chartWeekDays.map((day, idx) => {
+              const val = chartValues[idx];
+              const heightPct = val > 0 ? Math.max(6, (val / maxChartVal) * 100) : 4;
+              const isToday = day === todayIso;
+              const isBest = idx === bestIdx && val > 0;
+              return (
+                <div key={day} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
+                  <span className="text-[10px] font-mono text-slate-400 font-bold h-3">
+                    {val > 0 ? (chartMetric === 't' ? shortT(val) : val) : ''}
+                  </span>
+                  <div className="w-full flex-1 bg-slate-100 dark:bg-slate-700/40 rounded-xl flex items-end overflow-hidden relative">
+                    <div
+                      className={`w-full rounded-xl transition-all duration-700 ${
+                        chartMetric === 't'
+                          ? isToday
+                            ? 'bg-gradient-to-t from-emerald-600 to-emerald-400'
+                            : 'bg-gradient-to-t from-emerald-500/70 to-emerald-300/80 dark:from-emerald-700 dark:to-emerald-500/70'
+                          : isToday
+                          ? 'bg-gradient-to-t from-indigo-600 to-indigo-400'
+                          : 'bg-gradient-to-t from-indigo-500/70 to-indigo-300/80 dark:from-indigo-700 dark:to-indigo-500/70'
+                      } ${isBest ? 'ring-2 ring-amber-400 ring-offset-1 dark:ring-offset-slate-800' : ''}`}
+                      style={{ height: `${heightPct}%` }}
+                    />
+                  </div>
+                  <span className={`text-[10px] font-bold uppercase ${isToday ? 'text-emerald-500' : 'text-slate-400'}`}>
+                    {WEEKDAY_NAMES[idx]}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* DISCIPLINAS */}
+      <div className={`${card} p-6`}>
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">Disciplinas</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Clique em uma disciplina para abrir</p>
+          </div>
+        </div>
+
+        {discStats.length === 0 ? (
+          <p className="text-sm text-slate-500 text-center py-8">Nenhuma disciplina neste edital ainda.</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {discStats.map((s) => {
+              const accColor =
+                s.q === 0
+                  ? 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300'
+                  : s.acc >= 80
+                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300'
+                  : s.acc >= 60
+                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300'
+                  : 'bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-300';
+              return (
+                <button
+                  key={s.d.id}
+                  onClick={() => onNavigateToDiscipline(s.d.id)}
+                  className="text-left p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200/70 dark:border-slate-700/70 hover:border-emerald-400 hover:shadow-md transition cursor-pointer group"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-black text-sm uppercase text-slate-800 dark:text-slate-100 truncate group-hover:text-emerald-600 transition">
+                        {s.d.name}
+                      </div>
+                      <div className="text-[11px] font-mono text-slate-500 mt-0.5">
+                        {s.dSec > 0 ? hm(s.dSec) : 'sem tempo registrado'}
+                      </div>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded-lg text-[11px] font-black shrink-0 ${accColor}`}>
+                      {s.q === 0 ? '—' : `${s.acc}%`}
+                    </span>
+                  </div>
+
+                  <div className="mt-4">
+                    <div className="flex justify-between text-[11px] font-semibold text-slate-500 mb-1.5">
+                      <span>Conteúdo</span>
+                      <span className="font-bold text-slate-700 dark:text-slate-300">{s.pct}%</span>
+                    </div>
+                    <div className="h-2 w-full bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-700"
+                        style={{ width: `${s.pct}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 mt-3 text-[11px] font-bold">
+                    <span className="text-emerald-600 dark:text-emerald-400">✓ {s.dHits}</span>
+                    <span className="text-rose-600 dark:text-rose-400">✗ {s.dErrors}</span>
+                    <span className="text-slate-500 ml-auto">{s.q} questões</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
+
+// Helper pequeno para o texto de quantidade de disciplinas
+function discCountLabel(n: number): string {
+  return `${n} ${n === 1 ? 'disciplina' : 'disciplinas'}`;
+}
