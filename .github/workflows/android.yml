@@ -26,8 +26,8 @@ jobs:
       - name: Instalar dependências
         run: npm install
 
-      - name: Gerar o app (site)
-        run: npx vite build
+      - name: Gerar o app e o HTML único
+        run: npm run build
 
       - name: Criar o projeto Android (só é criado nesta execução)
         run: |
@@ -54,3 +54,9 @@ jobs:
         with:
           name: quadro-de-estudos-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Disponibilizar o HTML para baixar
+        uses: actions/upload-artifact@v4
+        with:
+          name: meu-quadro-html
+          path: dist-standalone/Meu-Quadro-de-Estudos.html
