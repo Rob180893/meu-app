@@ -1,6 +1,6 @@
 {
   "name": "Meu Quadro de Estudos",
-  "description": "Quadro kanban de estudos, disciplinas com edital verticalizado, revisões espaçadas, ciclo de estudos, metas semanais e cronômetro com registro de sessões.",
+  "description": "Quadro kanban de estudos, disciplinas com edital verticalizado, revisões espaçadas, ciclo de estudos, planejamento semanal, estatísticas e leitor de PDF com anotações.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

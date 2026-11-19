@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { ActiveRun, DiscState } from '../types';
-import { buildDailyTotals, fmtLong, periodKeys, streaks, sumSeconds } from '../utils/stats';
-import { BarChart3, Clock, CheckCircle2, Target, Award, AlertTriangle, Flame } from 'lucide-react';
+import { AlertTriangle, Award, CheckCircle, Clock, Flame, Target } from 'lucide-react';
+import type { ActiveRun, Discipline, DiscState } from '../types';
+import { addDays, formatDurationStats, formatShortDate, todayStr } from '../utils/date';
 
 interface StatsViewProps {
   discState: DiscState;
@@ -9,181 +9,195 @@ interface StatsViewProps {
   currentElapsedSeconds: number;
 }
 
-type Period = 1 | 7 | 30 | 90 | 'all';
-type SortBy = 'time' | 'hits' | 'topics';
-
 const ALL_EDITAIS = '__all__';
 
-const PERIODS: { value: Period; label: string }[] = [
-  { value: 1, label: 'Hoje' },
+const PERIODS = [
   { value: 7, label: '7 dias' },
   { value: 30, label: '30 dias' },
   { value: 90, label: '90 dias' },
   { value: 'all', label: 'Tudo' },
-];
+] as const;
 
-const SORTS: { value: SortBy; label: string }[] = [
-  { value: 'time', label: 'Horas' },
-  { value: 'hits', label: 'Acertos (%)' },
-  { value: 'topics', label: 'Tópicos' },
-];
+const SORTS = [
+  { value: 'time', label: 'Tempo' },
+  { value: 'questions', label: 'Questões' },
+  { value: 'rate', label: 'Aproveitamento' },
+  { value: 'name', label: 'Nome' },
+] as const;
 
-const shortDate = (k: string): string => k.slice(8, 10) + '/' + k.slice(5, 7);
-
-const CARD =
+const CARD_CLS =
   'p-5 rounded-3xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-800 shadow-sm';
-
-const hitBadgeClass = (rate: number): string =>
-  rate >= 80
-    ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300'
-    : rate >= 60
-    ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300'
-    : 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300';
-
-const Kpi: React.FC<{
-  title: string;
-  value: string;
-  sub: string;
-  icon: React.ReactNode;
-  valueClass?: string;
-}> = ({ title, value, sub, icon, valueClass = 'text-slate-900 dark:text-white' }) => (
-  <div className={`${CARD} flex flex-col justify-between gap-2`}>
-    <div className="flex items-center justify-between text-slate-400">
-      <span className="text-[11px] font-bold uppercase tracking-wider">{title}</span>
-      {icon}
-    </div>
-    <div>
-      <div className={`text-2xl sm:text-3xl font-black tabular-nums ${valueClass}`}>{value}</div>
-      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{sub}</div>
-    </div>
-  </div>
-);
 
 export const StatsView: React.FC<StatsViewProps> = ({
   discState,
   activeRun,
   currentElapsedSeconds,
 }) => {
-  const [period, setPeriod] = useState<Period>(30);
-  const [editalId, setEditalId] = useState<string>(discState.edsel || discState.eds[0]?.id || ALL_EDITAIS);
-  const [sortBy, setSortBy] = useState<SortBy>('time');
+  const [period, setPeriod] = useState<7 | 30 | 90 | 'all'>(30);
+  const [editalFilter, setEditalFilter] = useState<string>(
+    discState.edsel || discState.eds[0]?.id || ALL_EDITAIS
+  );
+  const [sortBy, setSortBy] = useState<'time' | 'questions' | 'rate' | 'name'>('time');
 
-  // ---- Escopo: um edital ou todos ----
-  const selectedEd = discState.eds.find((e) => e.id === editalId);
-  const scopeEds = editalId === ALL_EDITAIS || !selectedEd ? discState.eds : [selectedEd];
-  const disciplines = scopeEds.flatMap((e) => e.list || []);
-  const scopeIds = new Set(disciplines.map((d) => d.id));
-  const liveRun = activeRun?.start && scopeIds.has(activeRun.id) ? activeRun : null;
+  const today = todayStr();
+  const targetEditais =
+    editalFilter === ALL_EDITAIS
+      ? discState.eds
+      : discState.eds.filter((e) => e.id === editalFilter);
+  const targetList = targetEditais.length ? targetEditais : discState.eds;
+  const disciplines: Discipline[] = targetList.flatMap((e) => e.list || []);
 
-  // ---- Tempo e constância (uma única fonte: buildDailyTotals) ----
-  const totals = buildDailyTotals({ ...discState, eds: scopeEds }, liveRun, currentElapsedSeconds);
-  const keys = periodKeys(period, totals);
-  const keySet = new Set(keys);
-  const periodSeconds = sumSeconds(totals, keys);
-  const studiedDays = keys.filter((k) => (totals[k] || 0) > 0).length;
-  const avgSeconds = studiedDays > 0 ? periodSeconds / studiedDays : 0;
-  const constancyPct = keys.length > 0 ? Math.round((studiedDays / keys.length) * 100) : 0;
-  const streak = streaks(totals);
-
-  // ---- Métricas por disciplina (acertos incluem subtópicos, em todos os cálculos) ----
-  const rows = disciplines.map((d) => {
-    let seconds = 0;
-    Object.entries(d.log || {}).forEach(([k, v]) => {
-      if (keySet.has(k)) seconds += Number(v) || 0;
+  // Mapa diário de segundos
+  const dailyMap: Record<string, number> = {};
+  disciplines.forEach((d) => {
+    Object.entries(d.log || {}).forEach(([day, sec]) => {
+      dailyMap[day] = (dailyMap[day] || 0) + (sec || 0);
     });
-    if (liveRun && liveRun.id === d.id && keySet.has(liveRun.day)) {
-      seconds += currentElapsedSeconds;
+  });
+  if (activeRun?.start && activeRun.day && disciplines.some((d) => d.id === activeRun.id)) {
+    dailyMap[activeRun.day] = (dailyMap[activeRun.day] || 0) + currentElapsedSeconds;
+  }
+
+  // Range de datas
+  const firstActiveDay =
+    Object.keys(dailyMap)
+      .filter((k) => dailyMap[k] > 0)
+      .sort()[0] || today;
+  const startDate = period === 'all' ? firstActiveDay : addDays(today, -(period - 1));
+  const rangeDays: string[] = [];
+  let cursor = startDate;
+  while (cursor <= today) {
+    rangeDays.push(cursor);
+    cursor = addDays(cursor, 1);
+  }
+
+  const totalSecPeriod = rangeDays.reduce((acc, d) => acc + (dailyMap[d] || 0), 0);
+  const studiedDaysCount = rangeDays.filter((d) => (dailyMap[d] || 0) > 0).length;
+  const avgSecPerStudiedDay = studiedDaysCount > 0 ? totalSecPeriod / studiedDaysCount : 0;
+  const consistencyPct =
+    rangeDays.length > 0 ? Math.round((studiedDaysCount / rangeDays.length) * 100) : 0;
+
+  // Sequência global
+  const activeDatesSet = new Set(Object.keys(dailyMap).filter((k) => dailyMap[k] > 0));
+  const sortedDates = [...activeDatesSet].sort();
+  let longestStreak = 0;
+  let running = 0;
+  let prevDay: string | null = null;
+  sortedDates.forEach((d) => {
+    running = prevDay && addDays(prevDay, 1) === d ? running + 1 : 1;
+    longestStreak = Math.max(longestStreak, running);
+    prevDay = d;
+  });
+  let currentStreak = 0;
+  let check = today;
+  if (!activeDatesSet.has(check)) check = addDays(today, -1);
+  while (activeDatesSet.has(check)) {
+    currentStreak++;
+    check = addDays(check, -1);
+  }
+
+  // Totais de questões & tópicos
+  let hits = 0;
+  let errors = 0;
+  let totalTopics = 0;
+  let studiedTopics = 0;
+
+  const perDisc = disciplines.map((d) => {
+    let sec = rangeDays.reduce((acc, day) => acc + ((d.log && d.log[day]) || 0), 0);
+    if (activeRun?.id === d.id && activeRun.start && rangeDays.includes(activeRun.day)) {
+      sec += currentElapsedSeconds;
     }
 
-    let hits = 0;
-    let errors = 0;
-    let reviews = 0;
-    (d.topics || []).forEach((t) => {
-      hits += t.h || 0;
-      errors += t.e || 0;
-      reviews += Object.values(t.r || {}).filter(Boolean).length;
-      (t.subs || []).forEach((st) => {
-        hits += st.h || 0;
-        errors += st.e || 0;
-        reviews += Object.values(st.r || {}).filter(Boolean).length;
+    let dHits = 0;
+    let dErrors = 0;
+    let dTotal = 0;
+    let dStudied = 0;
+    let dReviews = 0;
+
+    d.topics.forEach((t) => {
+      dTotal++;
+      if (t.studied) dStudied++;
+      dHits += t.h || 0;
+      dErrors += t.e || 0;
+      dReviews +=
+        Object.values(t.r || {}).filter(Boolean).length + (t.recurringDates?.length || 0);
+      (t.subs || []).forEach((s) => {
+        dTotal++;
+        if (s.studied || s.done) dStudied++;
+        dHits += s.h || 0;
+        dErrors += s.e || 0;
+        dReviews += Object.values(s.r || {}).filter(Boolean).length;
       });
     });
 
-    const totalTopics = (d.topics || []).length;
-    const studiedTopics = (d.topics || []).filter((t) => t.studied).length;
-    const questions = hits + errors;
+    hits += dHits;
+    errors += dErrors;
+    totalTopics += dTotal;
+    studiedTopics += dStudied;
 
+    const q = dHits + dErrors;
     return {
       discipline: d,
-      seconds,
-      hits,
-      errors,
-      questions,
-      hitRate: questions > 0 ? Math.round((hits / questions) * 100) : null,
-      totalTopics,
-      studiedTopics,
-      coveragePct: totalTopics > 0 ? Math.round((studiedTopics / totalTopics) * 100) : 0,
-      reviews,
+      seconds: sec,
+      hits: dHits,
+      errors: dErrors,
+      questions: q,
+      hitRate: q > 0 ? Math.round((dHits / q) * 100) : null,
+      studiedTopics: dStudied,
+      totalTopics: dTotal,
+      coveragePct: dTotal > 0 ? Math.round((dStudied / dTotal) * 100) : 0,
+      reviews: dReviews,
     };
   });
 
-  const totalHits = rows.reduce((a, r) => a + r.hits, 0);
-  const totalErrors = rows.reduce((a, r) => a + r.errors, 0);
-  const totalQuestions = totalHits + totalErrors;
-  const overallHitRate = totalQuestions > 0 ? Math.round((totalHits / totalQuestions) * 100) : null;
-  const totalTopics = rows.reduce((a, r) => a + r.totalTopics, 0);
-  const studiedTopics = rows.reduce((a, r) => a + r.studiedTopics, 0);
+  const totalQuestions = hits + errors;
+  const globalHitRate = totalQuestions > 0 ? Math.round((hits / totalQuestions) * 100) : null;
   const editalPct = totalTopics > 0 ? Math.round((studiedTopics / totalTopics) * 100) : 0;
 
-  const sorted = [...rows].sort((a, b) => {
-    if (sortBy === 'hits') return (b.hitRate ?? -1) - (a.hitRate ?? -1) || b.questions - a.questions;
-    if (sortBy === 'topics') return b.coveragePct - a.coveragePct;
+  const sortedDiscs = [...perDisc].sort((a, b) => {
+    if (sortBy === 'questions') return b.questions - a.questions;
+    if (sortBy === 'rate') return (b.hitRate ?? -1) - (a.hitRate ?? -1);
+    if (sortBy === 'name') return a.discipline.name.localeCompare(b.discipline.name);
     return b.seconds - a.seconds;
   });
-  const maxSeconds = Math.max(...rows.map((r) => r.seconds), 1);
-  const maxQuestions = Math.max(...rows.map((r) => r.questions), 1);
 
-  // ---- Destaques ----
-  const mostStudied = [...rows].filter((r) => r.seconds > 0).sort((a, b) => b.seconds - a.seconds)[0];
-  const bestAccuracy = rows
-    .filter((r) => r.questions >= 5)
+  const maxDiscSec = Math.max(...perDisc.map((x) => x.seconds), 1);
+  const maxDiscQ = Math.max(...perDisc.map((x) => x.questions), 1);
+  const hoursSeries = rangeDays.map((day) => (dailyMap[day] || 0) / 3600);
+  const maxHoursDay = Math.max(...hoursSeries, 0.5);
+  const labelStep = Math.max(1, Math.ceil(rangeDays.length / 8));
+
+  const mostStudied = [...perDisc].filter((x) => x.seconds > 0).sort((a, b) => b.seconds - a.seconds)[0];
+  const bestPerf = [...perDisc]
+    .filter((x) => x.hitRate !== null && x.questions >= 5)
     .sort((a, b) => (b.hitRate ?? 0) - (a.hitRate ?? 0))[0];
-  const needsAttention = rows
-    .filter((r) => r.questions >= 3 && (r.hitRate ?? 100) < 65)
-    .sort((a, b) => (a.hitRate ?? 0) - (b.hitRate ?? 0))[0];
-
-  // ---- Gráfico de horas por dia ----
-  const dayHours = keys.map((k) => (totals[k] || 0) / 3600);
-  const maxHours = Math.max(1, ...dayHours);
-  const labelEvery = Math.max(1, Math.ceil(keys.length / 8));
-
-  const scopeLabel = editalId === ALL_EDITAIS || !selectedEd ? 'Todos os editais' : selectedEd.name;
+  const attentionDisc = [...perDisc]
+    .filter((x) => x.hitRate !== null && x.hitRate < 65 && x.questions >= 5)
+    .sort((a, b) => (a.hitRate ?? 100) - (b.hitRate ?? 100))[0];
 
   return (
     <div className="space-y-6">
-      {/* Cabeçalho e filtros (valem para toda a aba) */}
-      <div className="flex flex-col gap-4 pb-3 border-b border-slate-200/60 dark:border-slate-800/60">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 pb-3 border-b border-slate-200/60 dark:border-slate-800/60">
         <div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold uppercase tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-            <BarChart3 className="w-6 h-6 text-emerald-500" />
+          <h2 className="text-2xl sm:text-3xl font-extrabold uppercase tracking-tight text-slate-900 dark:text-white">
             Estatísticas
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Tempo, constância, acertos e avanço no edital — {scopeLabel.toLowerCase()}.
+            Evolução de horas, constância e desempenho por disciplina
           </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <select
-            value={editalId}
-            onChange={(e) => setEditalId(e.target.value)}
+            value={editalFilter}
+            onChange={(e) => setEditalFilter(e.target.value)}
             aria-label="Edital"
-            className="text-xs font-bold py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+            className="text-xs font-bold py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none cursor-pointer"
           >
             <option value={ALL_EDITAIS}>Todos os editais</option>
             {discState.eds.map((ed) => (
               <option key={ed.id} value={ed.id}>
-                {ed.name} ({(ed.list || []).length} disc.)
+                {ed.name} ({ed.list.length} disc.)
               </option>
             ))}
           </select>
@@ -207,63 +221,94 @@ export const StatsView: React.FC<StatsViewProps> = ({
         </div>
       </div>
 
-      {/* Indicadores principais */}
+      {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi
-          title="Tempo no período"
-          value={fmtLong(periodSeconds)}
-          sub={studiedDays > 0 ? `${fmtLong(avgSeconds)} por dia estudado` : 'Nenhum estudo no período'}
-          icon={<Clock className="w-4 h-4 text-blue-500" />}
-        />
-        <Kpi
-          title="Constância"
-          value={`${constancyPct}%`}
-          sub={`${studiedDays} de ${keys.length} dias · sequência ${streak.current}d (recorde ${streak.longest}d)`}
-          icon={<Flame className="w-4 h-4 text-orange-500" />}
-        />
-        <Kpi
-          title="Taxa de acertos"
-          value={overallHitRate !== null ? `${overallHitRate}%` : '—'}
-          sub={`${totalHits} acertos · ${totalErrors} erros (acumulado)`}
-          icon={<Target className="w-4 h-4 text-emerald-500" />}
-          valueClass="text-emerald-600 dark:text-emerald-400"
-        />
-        <Kpi
-          title="Edital concluído"
-          value={`${editalPct}%`}
-          sub={`${studiedTopics} de ${totalTopics} tópicos · ${totalTopics - studiedTopics} pendentes`}
-          icon={<CheckCircle2 className="w-4 h-4 text-indigo-500" />}
-          valueClass="text-indigo-600 dark:text-indigo-400"
-        />
+        <div className={CARD_CLS}>
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Tempo no período</span>
+            <Clock className="w-4 h-4 text-blue-500" />
+          </div>
+          <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white mt-2 tabular-nums">
+            {formatDurationStats(totalSecPeriod)}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-1 tabular-nums">
+            {studiedDaysCount > 0
+              ? `${formatDurationStats(avgSecPerStudiedDay)} por dia estudado`
+              : 'Nenhum estudo no período'}
+          </div>
+        </div>
+
+        <div className={CARD_CLS}>
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Constância</span>
+            <Flame className="w-4 h-4 text-orange-500" />
+          </div>
+          <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white mt-2 tabular-nums">
+            {consistencyPct}%
+          </div>
+          <div className="text-[11px] text-slate-500 mt-1 tabular-nums">
+            {studiedDaysCount} de {rangeDays.length} dias · sequência {currentStreak}d (recorde{' '}
+            {longestStreak}d)
+          </div>
+        </div>
+
+        <div className={CARD_CLS}>
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Taxa de acertos</span>
+            <Target className="w-4 h-4 text-emerald-500" />
+          </div>
+          <div className="text-2xl sm:text-3xl font-black text-emerald-600 dark:text-emerald-400 mt-2 tabular-nums">
+            {globalHitRate === null ? '—' : `${globalHitRate}%`}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-1 tabular-nums">
+            {hits} acertos · {errors} erros (acumulado)
+          </div>
+        </div>
+
+        <div className={CARD_CLS}>
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Edital concluído</span>
+            <CheckCircle className="w-4 h-4 text-indigo-500" />
+          </div>
+          <div className="text-2xl sm:text-3xl font-black text-indigo-600 dark:text-indigo-400 mt-2 tabular-nums">
+            {editalPct}%
+          </div>
+          <div className="text-[11px] text-slate-500 mt-1 tabular-nums">
+            {studiedTopics} de {totalTopics} tópicos · {totalTopics - studiedTopics} pendentes
+          </div>
+        </div>
       </div>
 
-      {/* Evolução diária */}
-      <div className={CARD}>
+      {/* Horas por dia */}
+      <div className={CARD_CLS}>
         <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800 dark:text-slate-100 mb-4">
           Horas por dia
         </h3>
-        {keys.length === 0 || periodSeconds === 0 ? (
+        {rangeDays.length === 0 || totalSecPeriod === 0 ? (
           <p className="text-xs text-slate-400">Nenhum estudo registrado neste período.</p>
         ) : (
           <div className="overflow-x-auto">
             <div className="flex items-end gap-[3px] h-40 min-w-full">
-              {dayHours.map((h, i) => (
+              {hoursSeries.map((h, i) => (
                 <div
-                  key={keys[i]}
+                  key={rangeDays[i]}
                   className="flex-1 min-w-[6px] h-full flex items-end"
-                  title={`${shortDate(keys[i])}: ${fmtLong(h * 3600)}`}
+                  title={`${formatShortDate(rangeDays[i])}: ${formatDurationStats(h * 3600)}`}
                 >
                   <div
                     className="w-full rounded-t bg-emerald-500/80 hover:bg-emerald-500 transition"
-                    style={{ height: `${Math.max(h > 0 ? 3 : 0, (h / maxHours) * 100)}%` }}
+                    style={{ height: `${Math.max(h > 0 ? 3 : 0, (h / maxHoursDay) * 100)}%` }}
                   />
                 </div>
               ))}
             </div>
             <div className="flex gap-[3px] min-w-full mt-1.5">
-              {keys.map((k, i) => (
-                <div key={k} className="flex-1 min-w-[6px] text-[9px] text-slate-400 text-center">
-                  {i % labelEvery === 0 ? shortDate(k) : ''}
+              {rangeDays.map((day, idx) => (
+                <div
+                  key={day}
+                  className="flex-1 min-w-[6px] text-[9px] text-slate-400 text-center tabular-nums"
+                >
+                  {idx % labelStep === 0 ? formatShortDate(day) : ''}
                 </div>
               ))}
             </div>
@@ -271,13 +316,13 @@ export const StatsView: React.FC<StatsViewProps> = ({
         )}
       </div>
 
-      {/* Distribuição por disciplina (substitui as três visões repetidas) */}
-      <div className={`${CARD} space-y-4`}>
+      {/* Desempenho por disciplina */}
+      <div className={`${CARD_CLS} space-y-4`}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800 dark:text-slate-100">
             Desempenho por disciplina
           </h3>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 flex-wrap">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-1">
               Ordenar:
             </span>
@@ -302,32 +347,41 @@ export const StatsView: React.FC<StatsViewProps> = ({
           <p className="text-xs text-slate-400">Nenhuma disciplina cadastrada neste edital.</p>
         ) : (
           <div className="space-y-3">
-            {sorted.map((r) => {
-              const sharePct = periodSeconds > 0 ? Math.round((r.seconds / periodSeconds) * 100) : 0;
+            {sortedDiscs.map((item) => {
+              const sharePct =
+                totalSecPeriod > 0 ? Math.round((item.seconds / totalSecPeriod) * 100) : 0;
               return (
                 <div
-                  key={r.discipline.id}
+                  key={item.discipline.id}
                   className="p-3 rounded-2xl bg-slate-50/70 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/80"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2 text-xs mb-1.5">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="font-extrabold text-slate-800 dark:text-slate-100 uppercase truncate">
-                        {r.discipline.name}
+                        {item.discipline.name}
                       </span>
-                      {r.seconds > 0 && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold">
-                          {sharePct}% do tempo
+                      {item.seconds > 0 && (
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold tabular-nums">
+                          · {sharePct}% do tempo
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-2">
-                      {r.hitRate !== null && (
-                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${hitBadgeClass(r.hitRate)}`}>
-                          {r.hitRate}% acertos
+                    <div className="flex items-center gap-2 tabular-nums">
+                      {item.hitRate !== null && (
+                        <span
+                          className={`text-[11px] font-bold ${
+                            item.hitRate >= 80
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : item.hitRate >= 60
+                              ? 'text-amber-600 dark:text-amber-400'
+                              : 'text-rose-600 dark:text-rose-400'
+                          }`}
+                        >
+                          {item.hitRate}% acertos
                         </span>
                       )}
                       <span className="font-mono font-bold text-slate-900 dark:text-white">
-                        {fmtLong(r.seconds)}
+                        {formatDurationStats(item.seconds)}
                       </span>
                     </div>
                   </div>
@@ -335,26 +389,32 @@ export const StatsView: React.FC<StatsViewProps> = ({
                   <div className="h-3 bg-slate-200/70 dark:bg-slate-700/60 rounded-lg overflow-hidden">
                     <div
                       className="h-full rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500"
-                      style={{ width: `${r.seconds > 0 ? Math.max(3, (r.seconds / maxSeconds) * 100) : 0}%` }}
+                      style={{
+                        width: `${item.seconds > 0 ? Math.max(3, (item.seconds / maxDiscSec) * 100) : 0}%`,
+                      }}
                     />
                   </div>
 
-                  <div className="flex flex-wrap justify-between gap-x-4 gap-y-1 mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+                  <div className="flex flex-wrap justify-between gap-x-4 gap-y-1 mt-2 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
                     <span>
                       Tópicos:{' '}
                       <strong className="text-slate-700 dark:text-slate-200">
-                        {r.studiedTopics}/{r.totalTopics}
+                        {item.studiedTopics}/{item.totalTopics}
                       </strong>{' '}
-                      ({r.coveragePct}%)
+                      ({item.coveragePct}%)
                     </span>
                     <span>
                       Questões:{' '}
-                      <strong className="text-slate-700 dark:text-slate-200">{r.questions}</strong>{' '}
-                      ({r.hits} acertos / {r.errors} erros)
+                      <strong className="text-slate-700 dark:text-slate-200">
+                        {item.questions}
+                      </strong>{' '}
+                      ({item.hits} acertos / {item.errors} erros)
                     </span>
                     <span>
                       Revisões concluídas:{' '}
-                      <strong className="text-emerald-600 dark:text-emerald-400">{r.reviews}</strong>
+                      <strong className="text-emerald-600 dark:text-emerald-400">
+                        {item.reviews}
+                      </strong>
                     </span>
                   </div>
                 </div>
@@ -364,8 +424,8 @@ export const StatsView: React.FC<StatsViewProps> = ({
         )}
       </div>
 
-      {/* Disciplinas x Desempenho: barras = questões, selo = % de acertos */}
-      <div className={CARD}>
+      {/* Disciplinas x Desempenho */}
+      <div className={CARD_CLS}>
         <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
           <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800 dark:text-slate-100">
             Disciplinas x Desempenho
@@ -388,33 +448,32 @@ export const StatsView: React.FC<StatsViewProps> = ({
           <div className="overflow-x-auto pb-2">
             <div
               className="flex gap-3 pt-6"
-              style={{ minWidth: `${Math.max(rows.length * 64, 0)}px` }}
+              style={{ minWidth: `${Math.max(perDisc.length * 64, 0)}px` }}
             >
-              {rows.map((r) => (
-                <div key={r.discipline.id} className="flex flex-col flex-1 min-w-[56px]">
-                  {/* Área do gráfico: 0% embaixo, 100% em cima */}
+              {perDisc.map((item) => (
+                <div key={item.discipline.id} className="flex flex-col flex-1 min-w-[56px]">
                   <div className="relative h-48 border-b border-slate-200 dark:border-slate-700">
                     <div
                       className="absolute bottom-0 left-1/2 -translate-x-1/2 w-7 rounded-t-md bg-emerald-400 hover:bg-emerald-500 transition"
-                      style={{ height: `${(r.questions / maxQuestions) * 100}%` }}
-                      title={`${r.discipline.name}: ${r.questions} questões`}
+                      style={{ height: `${(item.questions / maxDiscQ) * 100}%` }}
+                      title={`${item.discipline.name}: ${item.questions} questões`}
                     />
-                    {r.hitRate !== null && (
+                    {item.hitRate !== null && (
                       <span
-                        className="absolute left-1/2 -translate-x-1/2 translate-y-1/2 text-[11px] font-bold text-white bg-violet-600 px-2 py-0.5 rounded-full whitespace-nowrap shadow-sm"
-                        style={{ bottom: `${r.hitRate}%` }}
-                        title={`${r.discipline.name}: ${r.hitRate}% de acertos`}
+                        className="absolute left-1/2 -translate-x-1/2 translate-y-1/2 text-[11px] font-bold text-white bg-violet-600 px-2 py-0.5 rounded-lg whitespace-nowrap shadow-sm tabular-nums"
+                        style={{ bottom: `${item.hitRate}%` }}
+                        title={`${item.discipline.name}: ${item.hitRate}% de acertos`}
                       >
-                        {r.hitRate}%
+                        {item.hitRate}%
                       </span>
                     )}
                   </div>
                   <div className="h-20 relative">
                     <span
                       className="absolute left-1/2 top-2 text-[10px] text-slate-500 dark:text-slate-400 whitespace-nowrap -rotate-45 origin-top-left"
-                      title={r.discipline.name}
+                      title={item.discipline.name}
                     >
-                      {r.discipline.name}
+                      {item.discipline.name}
                     </span>
                   </div>
                 </div>
@@ -422,14 +481,12 @@ export const StatsView: React.FC<StatsViewProps> = ({
             </div>
           </div>
         )}
-
         <p className="text-[10px] text-slate-400 mt-2">
-          Altura das barras: questões resolvidas. Selo: % de acertos (acumulado).
+          Altura das barras: questões resolvidas. Indicador: % de acertos acumulado.
         </p>
       </div>
 
-      {/* Destaques */}
-      {(mostStudied || bestAccuracy || needsAttention) && (
+      {(mostStudied || bestPerf || attentionDisc) && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {mostStudied && (
             <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/50 flex items-start gap-3">
@@ -443,12 +500,14 @@ export const StatsView: React.FC<StatsViewProps> = ({
                 <div className="text-sm font-bold text-slate-900 dark:text-white mt-0.5 truncate">
                   {mostStudied.discipline.name}
                 </div>
-                <p className="text-xs text-slate-600 dark:text-slate-300">{fmtLong(mostStudied.seconds)} no período</p>
+                <p className="text-xs text-slate-600 dark:text-slate-300 tabular-nums">
+                  {formatDurationStats(mostStudied.seconds)} no período
+                </p>
               </div>
             </div>
           )}
 
-          {bestAccuracy && (
+          {bestPerf && (
             <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 flex items-start gap-3">
               <span className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300">
                 <Award className="w-5 h-5" />
@@ -458,19 +517,19 @@ export const StatsView: React.FC<StatsViewProps> = ({
                   Melhor aproveitamento
                 </span>
                 <div className="text-sm font-bold text-slate-900 dark:text-white mt-0.5 truncate">
-                  {bestAccuracy.discipline.name}{' '}
-                  <span className="text-emerald-600 dark:text-emerald-400 font-black">
-                    {bestAccuracy.hitRate}%
+                  {bestPerf.discipline.name}{' '}
+                  <span className="text-emerald-600 dark:text-emerald-400 font-black tabular-nums">
+                    {bestPerf.hitRate}%
                   </span>
                 </div>
-                <p className="text-xs text-slate-600 dark:text-slate-300">
-                  {bestAccuracy.hits} acertos em {bestAccuracy.questions} questões
+                <p className="text-xs text-slate-600 dark:text-slate-300 tabular-nums">
+                  {bestPerf.hits} acertos em {bestPerf.questions} questões
                 </p>
               </div>
             </div>
           )}
 
-          {needsAttention && (
+          {attentionDisc && (
             <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 flex items-start gap-3">
               <span className="p-2 rounded-xl bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300">
                 <AlertTriangle className="w-5 h-5" />
@@ -480,9 +539,9 @@ export const StatsView: React.FC<StatsViewProps> = ({
                   Ponto de atenção
                 </span>
                 <div className="text-sm font-bold text-slate-900 dark:text-white mt-0.5 truncate">
-                  {needsAttention.discipline.name}{' '}
-                  <span className="text-amber-600 dark:text-amber-400 font-black">
-                    {needsAttention.hitRate}%
+                  {attentionDisc.discipline.name}{' '}
+                  <span className="text-amber-600 dark:text-amber-400 font-black tabular-nums">
+                    {attentionDisc.hitRate}%
                   </span>
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-300">

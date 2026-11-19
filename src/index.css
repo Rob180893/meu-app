@@ -1,19 +1,5 @@
 @import "tailwindcss";
-
-/* Paleta inspirada no modelo de interface bancária: azul marinho e azul royal */
-@theme {
-  --color-blue-50: #eef4fb;
-  --color-blue-100: #dbe8f7;
-  --color-blue-200: #b9d2f0;
-  --color-blue-300: #8fb6e8;
-  --color-blue-400: #5f94dc;
-  --color-blue-500: #3b76cc;
-  --color-blue-600: #1f5fae;
-  --color-blue-700: #1a4d8f;
-  --color-blue-800: #163f75;
-  --color-blue-900: #0e2b52;
-  --color-blue-950: #081b37;
-}
+@custom-variant dark (&:where(.dark, .dark *, [data-theme=dark], [data-theme=dark] *));
 
 :root {
   --bg: #e8eef7;
@@ -27,6 +13,7 @@
   --grad: linear-gradient(160deg, #eef4fb 0%, #dbe8f7 55%, #b9d2f0 100%);
 }
 
+:root.dark,
 :root[data-theme="dark"] {
   --bg: #10151f;
   --col: #1b2230;
@@ -40,48 +27,90 @@
   color-scheme: dark;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #10151f;
-    --col: #1b2230;
-    --card: #252e40;
-    --tx: #e8ecf3;
-    --mut: #93a0b8;
-    --ac: #5f94dc;
-    --bd: #33405a;
-    --ph: #2c3d68;
-    --grad: linear-gradient(160deg, #081b37 0%, #0e2b52 55%, #163f75 100%);
-    color-scheme: dark;
-  }
-}
-
-html, body {
-  margin: 0;
-  padding: 0;
-  min-height: 100vh;
-  min-height: 100dvh;
+html,
+body {
   background-color: var(--bg);
   background-image: var(--grad);
   background-attachment: fixed;
+  min-height: 100dvh;
   color: var(--tx);
-  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   letter-spacing: -0.01em;
   touch-action: manipulation;
   -webkit-font-smoothing: antialiased;
+  margin: 0;
+  padding: 0;
+  font-family: "Plus Jakarta Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-/* Custom scrollbars */
+.font-mono {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
   background: rgba(100, 116, 139, 0.3);
   border-radius: 9999px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(100, 116, 139, 0.5);
 }
+
+/* PDF.js TextLayer para seleção de texto e marca-texto em texto corrido */
+.pdf-text-layer {
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor, 1) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  -webkit-text-size-adjust: none;
+  transform-origin: 0 0;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.pdf-text-layer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.pdf-text-layer > :not(.markedContent),
+.pdf-text-layer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.pdf-text-layer .markedContent {
+  display: contents;
+}
+
+.pdf-text-layer ::selection {
+  background: var(--pdf-sel-bg, rgba(253, 224, 71, 0.45));
+  color: transparent;
+}
+
