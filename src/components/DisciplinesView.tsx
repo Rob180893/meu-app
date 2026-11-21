@@ -2705,7 +2705,7 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
 
       {/* Modal: Novo Edital */}
       {newEditalModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pt-[calc(1rem+max(env(safe-area-inset-top,0px),28px))] bg-black/50 backdrop-blur-xs">
           <div className="w-full max-w-lg rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-extrabold uppercase tracking-wider text-slate-900 dark:text-white">
@@ -2763,7 +2763,7 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
 
       {/* Modal: Datas do Edital */}
       {editDatesModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pt-[calc(1rem+max(env(safe-area-inset-top,0px),28px))] bg-black/50 backdrop-blur-xs">
           <div className="w-full max-w-lg rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-extrabold uppercase tracking-wider text-slate-900 dark:text-white">
@@ -2805,7 +2805,7 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
       )}
       {/* Modal: Vincular PDF ao Tópico/Subtópico */}
       {pdfLinkTarget && activeDisc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55 backdrop-blur-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pt-[calc(1rem+max(env(safe-area-inset-top,0px),28px))] bg-black/55 backdrop-blur-xs">
           <div className="w-full max-w-lg rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4">
             <div className="flex items-start justify-between gap-3">
               <div>

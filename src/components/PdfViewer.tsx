@@ -1061,13 +1061,13 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     }`;
 
   return (
-    <div className="fixed inset-0 z-[80] bg-slate-950/95 flex flex-col">
+    <div className="fixed inset-0 z-[80] bg-slate-950/95 flex flex-col pt-[max(env(safe-area-inset-top,0px),28px)]">
       {/* Botão flutuante discreto quando as barras estão ocultas */}
       {barsHidden && (
         <button
           type="button"
           onClick={() => setBarsHidden(false)}
-          className="fixed top-3 right-3 z-40 px-3 py-2 rounded-xl bg-slate-900/75 hover:bg-slate-900 text-white/75 hover:text-white border border-white/15 shadow-lg backdrop-blur-sm text-xs font-bold flex items-center gap-1.5 opacity-45 hover:opacity-100 transition cursor-pointer"
+          className="fixed top-[calc(0.75rem+max(env(safe-area-inset-top,0px),28px))] right-3 z-40 px-3 py-2 rounded-xl bg-slate-900/75 hover:bg-slate-900 text-white/75 hover:text-white border border-white/15 shadow-lg backdrop-blur-sm text-xs font-bold flex items-center gap-1.5 opacity-45 hover:opacity-100 transition cursor-pointer"
           title="Mostrar barras do leitor (Esc ou tecla F)"
         >
           <PanelTopOpen className="w-4 h-4" />
