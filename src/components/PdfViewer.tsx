@@ -33,6 +33,7 @@ import {
 import { TextLayer } from 'pdfjs-dist';
 import type { ActiveRun, AnnotationsMap, NormalizedRect, Stroke } from '../types';
 import { formatHMS } from '../utils/date';
+import { mostrarBarraStatus, ocultarBarraStatus } from '../utils/barraStatus';
 import { exportAnnotatedPdfBytes, hasAnyAnnotations } from '../utils/pdfExport';
 import type { PDFDocumentProxy, RenderTask } from '../utils/pdfLoader';
 import { describePdfError, isPdfBytesValid, loadPdfDocument } from '../utils/pdfLoader';
@@ -687,6 +688,14 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   const [continuousMode, setContinuousMode] = useState(false);
   const [tool, setTool] = useState<PdfToolMode>(initialTool);
   const [hlMode, setHlMode] = useState<HighlightMode>('text');
+
+  // Sem distrações: esconde a barra de notificações enquanto o PDF estiver aberto
+  useEffect(() => {
+    ocultarBarraStatus();
+    return () => {
+      mostrarBarraStatus();
+    };
+  }, []);
   const [color, setColor] = useState(initialTool === 'hl' ? HL_COLORS[0] : PEN_COLORS[0]);
   const [fontSizeNorm, setFontSizeNorm] = useState(FONT_SIZES[1].value);
   const [error, setError] = useState<string | null>(null);

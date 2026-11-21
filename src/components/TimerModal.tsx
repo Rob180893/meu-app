@@ -12,6 +12,7 @@ import {
 import type { ActiveRun, DiscState } from '../types';
 import { addDays, formatHMS, formatHoursMin, todayStr } from '../utils/date';
 
+
 interface TimerModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -64,6 +65,12 @@ export const TimerModal: React.FC<TimerModalProps> = ({
   if (!isOpen) return null;
 
   const isRunning = Boolean(activeRun?.start);
+  const [mostrarTudo, setMostrarTudo] = useState<boolean>(false);
+
+  // Ao iniciar ou trocar a disciplina cronometrada, volta ao modo foco
+  useEffect(() => {
+    setMostrarTudo(false);
+  }, [isRunning, selectedDiscId]);
   const isActiveDiscMatch = Boolean(activeRun && activeRun.id === selectedDiscId);
   const elapsedForView = isActiveDiscMatch ? currentElapsedSeconds : 0;
 
@@ -116,6 +123,37 @@ export const TimerModal: React.FC<TimerModalProps> = ({
   }
 
   const activeDiscipline = disciplines.find((d) => d.id === selectedDiscId);
+
+  // Modo foco escuro: aparece enquanto o cronômetro roda; um toque mostra tudo
+  if (isRunning && isActiveDiscMatch && !mostrarTudo) {
+    return (
+      <div
+        onClick={() => setMostrarTudo(true)}
+        className="fixed inset-0 z-[95] bg-black text-slate-500 flex flex-col items-center justify-center select-none cursor-pointer"
+        role="dialog"
+        aria-label="Cronômetro em foco"
+      >
+        <div className="font-mono text-6xl sm:text-7xl font-black tracking-tight tabular-nums text-slate-400">
+          {formatHMS(displaySeconds)}
+        </div>
+        <div className="text-[11px] uppercase tracking-widest text-slate-600 font-bold mt-3">
+          {activeDiscipline?.name}
+        </div>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onPauseSession();
+          }}
+          className="mt-12 px-6 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-extrabold uppercase tracking-wider flex items-center gap-2 cursor-pointer"
+        >
+          <Pause className="w-4 h-4" />
+          <span>Pausar</span>
+        </button>
+        <div className="absolute bottom-8 text-[11px] text-slate-700">Toque na tela para ver tudo</div>
+      </div>
+    );
+  }
 
   return (
     <div
