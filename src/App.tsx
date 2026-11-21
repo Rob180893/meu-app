@@ -516,7 +516,7 @@ export default function App() {
         />
       )}
 
-      <main className="flex-1 min-w-0 flex flex-col pt-20 lg:pt-20">
+      <main className="flex-1 min-w-0 flex flex-col pt-[calc(5.5rem+max(env(safe-area-inset-top,0px),28px))] lg:pt-20">
         {isOffline && (
           <div className="px-4 py-2 bg-amber-500/15 border-b border-amber-500/30 text-amber-800 dark:text-amber-200 text-xs font-bold flex items-center justify-center gap-2">
             <WifiOff className="w-3.5 h-3.5" />

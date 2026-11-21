@@ -59,7 +59,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <>
       {/* Celular/tablet: barra fixa no topo com o nome e o botão de menu */}
-      <header className="lg:hidden fixed top-0 inset-x-0 z-40 h-14 flex items-center justify-between px-4 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border-b border-slate-200/80 dark:border-slate-700/80 shadow-sm">
+      <header className="lg:hidden fixed top-0 inset-x-0 z-40 h-[calc(3.5rem+max(env(safe-area-inset-top,0px),28px))] pt-[max(env(safe-area-inset-top,0px),28px)] flex items-center justify-between px-4 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border-b border-slate-200/80 dark:border-slate-700/80 shadow-sm">
         <span className="font-extrabold text-base tracking-wide text-slate-900 dark:text-white">
           Meu Quadro
         </span>
