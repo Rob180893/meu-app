@@ -279,6 +279,17 @@ export const TimerModal: React.FC<TimerModalProps> = ({
               </button>
             )}
 
+            {selectedDiscId && (
+              <button
+                type="button"
+                onClick={() => onOpenRegisterFromTimer(selectedDiscId, 0)}
+                className="px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-extrabold uppercase tracking-wider flex items-center gap-2 shadow-lg transition cursor-pointer whitespace-nowrap"
+              >
+                <Check className="w-4 h-4" />
+                <span>Registrar questões</span>
+              </button>
+            )}
+
             {elapsedForView > 0 && selectedDiscId && (
               <button
                 type="button"

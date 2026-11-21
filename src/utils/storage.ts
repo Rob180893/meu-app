@@ -409,9 +409,9 @@ export function downloadBlob(content: BlobPart, filename: string, mimeType: stri
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
-export async function exportBackupJSON(boards: KanbanState, disc: DiscState): Promise<void> {
+export async function montarBackup(boards: KanbanState, disc: DiscState) {
   const materiais = await exportAllMaterials();
-  const payload = {
+  return {
     app: 'quadro-estudos',
     version: 1,
     exported: new Date().toISOString(),
@@ -429,9 +429,40 @@ export async function exportBackupJSON(boards: KanbanState, disc: DiscState): Pr
       weekPlan: disc.weekPlan,
     },
   };
-  downloadBlob(
-    JSON.stringify(payload, null, 2),
+}
+
+/**
+ * Salva um arquivo em qualquer lugar do aparelho.
+ * Usa a tela de compartilhar do sistema (Drive, pasta, WhatsApp, e-mail etc.) quando disponível;
+ * caso contrário, baixa o arquivo normalmente.
+ */
+export async function salvarEmQualquerLugar(
+  nome: string,
+  conteudo: string,
+  tipo = 'application/json'
+): Promise<'compartilhado' | 'baixado' | 'cancelado'> {
+  const arquivo = new File([conteudo], nome, { type: tipo });
+  const nav = navigator as Navigator & {
+    canShare?: (data: { files: File[] }) => boolean;
+    share?: (data: { files: File[]; title?: string }) => Promise<void>;
+  };
+  if (nav.share && nav.canShare && nav.canShare({ files: [arquivo] })) {
+    try {
+      await nav.share({ files: [arquivo], title: nome });
+      return 'compartilhado';
+    } catch (err) {
+      if ((err as Error)?.name === 'AbortError') return 'cancelado';
+    }
+  }
+  downloadBlob(conteudo, nome, tipo);
+  return 'baixado';
+}
+
+export async function exportBackupJSON(boards: KanbanState, disc: DiscState): Promise<void> {
+  const payload = await montarBackup(boards, disc);
+  await salvarEmQualquerLugar(
     `backup-estudos-${todayStr()}.json`,
+    JSON.stringify(payload, null, 2),
     'application/json'
   );
 }

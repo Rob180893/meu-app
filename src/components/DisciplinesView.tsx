@@ -34,6 +34,7 @@ import type {
   PdfOpenRequest,
   SubTopic,
   Topic,
+  SessaoEstudo,
 } from '../types';
 import {
   addDays,
@@ -51,6 +52,7 @@ import {
   uid,
   validateEditalDates,
 } from '../utils/date';
+import { aplicarEdicaoSessao, ocultarSessao } from '../utils/sessoes';
 import { listMaterials, saveMaterialFile } from '../utils/storage';
 
 interface DisciplinesViewProps {
@@ -102,6 +104,512 @@ const EditalDatesFields: React.FC<{
         </label>
         <input type="date" value={value.prova || ''} onChange={bind('prova')} className={INPUT_CLS} />
       </div>
+    </div>
+  );
+};
+
+interface TopicoColado {
+  name: string;
+  g?: string;
+  subs: string[];
+}
+
+const limparPrefixoLista = (texto: string): string =>
+  texto.replace(/^(\d+(\.\d+)*[.)\-:\s]+|[-•*]\s+)/, '').trim().toUpperCase();
+
+/** Converte o texto da janela em tópicos e subtópicos. Traço ou recuo = subtópico. */
+const parseColagem = (texto: string): TopicoColado[] => {
+  const out: TopicoColado[] = [];
+  let grupo: string | undefined;
+  texto
+    .split(/\r?\n/)
+    .filter((l) => l.trim())
+    .forEach((raw) => {
+      const line = raw.trim();
+      if (line.startsWith('#') || (line.endsWith(':') && line.length < 70)) {
+        grupo = line.replace(/^#+\s*/, '').replace(/:$/, '').trim().toUpperCase() || undefined;
+        return;
+      }
+      const cleaned = limparPrefixoLista(line);
+      if (!cleaned) return;
+      const ehSub = out.length > 0 && (/^\s/.test(raw) || /^[-•*]\s+/.test(line));
+      if (ehSub) {
+        out[out.length - 1].subs.push(cleaned);
+        return;
+      }
+      out.push({ name: cleaned, g: grupo, subs: [] });
+    });
+  return out;
+};
+
+/** Gera o texto da janela a partir dos tópicos atuais, para editar. */
+const serializarTopicos = (topics: Topic[]): string => {
+  const linhas: string[] = [];
+  let grupoAtual: string | undefined;
+  topics.forEach((t) => {
+    if (t.g && t.g !== grupoAtual) {
+      linhas.push(`# ${t.g}`);
+      grupoAtual = t.g;
+    }
+    linhas.push(t.name);
+    (t.subs || []).forEach((sb) => linhas.push(`  - ${sb.name}`));
+  });
+  return linhas.join('\n');
+};
+
+/** Junta a lista colada com os tópicos existentes, mantendo o progresso dos que já existem. */
+const reconciliarTopicos = (existentes: Topic[], lista: TopicoColado[]): Topic[] => {
+  const usados = new Set<string>();
+  return lista.map((item) => {
+    const k = limparPrefixoLista(item.name);
+    const antigo = existentes.find((t) => !usados.has(t.id) && limparPrefixoLista(t.name) === k);
+    if (antigo) usados.add(antigo.id);
+    const subsAntigos = antigo?.subs || [];
+    const subsUsados = new Set<string>();
+    const subs: SubTopic[] = item.subs.map((nomeSub) => {
+      const ks = limparPrefixoLista(nomeSub);
+      const sa = subsAntigos.find((x) => !subsUsados.has(x.id) && limparPrefixoLista(x.name) === ks);
+      if (sa) {
+        subsUsados.add(sa.id);
+        return sa;
+      }
+      return { id: uid(), name: nomeSub, studied: null, done: false, h: 0, e: 0, tp: {}, r: {} };
+    });
+    const base: Topic = antigo
+      ? { ...antigo, g: item.g }
+      : { id: uid(), name: item.name, g: item.g, studied: null, q: false, r: {}, h: 0, e: 0 };
+    return syncTopicFromSubtopics({ ...base, subs });
+  });
+};
+
+/** Mostra o nome por inteiro. Só vira campo de edição ao clicar na caneta. */
+const NomeEditavel: React.FC<{
+  valor: string;
+  onSalvar: (novo: string) => void;
+  className?: string;
+}> = ({ valor, onSalvar, className }) => {
+  const [editando, setEditando] = useState(false);
+  const [rascunho, setRascunho] = useState(valor);
+
+  if (editando) {
+    return (
+      <textarea
+        autoFocus
+        rows={2}
+        value={rascunho}
+        onChange={(e) => setRascunho(e.target.value)}
+        onBlur={() => {
+          const novo = rascunho.trim().toUpperCase();
+          if (novo && novo !== valor) onSalvar(novo);
+          setEditando(false);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            setRascunho(valor);
+            setEditando(false);
+          }
+        }}
+        className="flex-1 min-w-[200px] font-bold text-xs uppercase bg-white/70 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 outline-none px-2 py-1 rounded-lg leading-snug focus:ring-2 focus:ring-blue-500"
+      />
+    );
+  }
+
+  return (
+    <div className="flex items-start gap-1.5 flex-1 min-w-[200px]">
+      <span
+        className={`flex-1 font-bold text-xs uppercase whitespace-normal break-words leading-snug text-slate-800 dark:text-slate-100 ${className || ''}`}
+      >
+        {valor}
+      </span>
+      <button
+        type="button"
+        onClick={() => {
+          setRascunho(valor);
+          setEditando(true);
+        }}
+        className="shrink-0 p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+        title="Editar nome"
+      >
+        <PenLine className="w-3 h-3" />
+      </button>
+    </div>
+  );
+};
+
+/** Histórico dos registros de estudo. Observações e detalhes podem ser editados. */
+const temDetalhe = (s: SessaoEstudo): boolean =>
+  !!(
+    s.paginaInicial ||
+    s.paginaFinal ||
+    s.material ||
+    s.videoTitulo ||
+    s.videoInicio ||
+    s.videoFim ||
+    s.observacoes
+  );
+
+const HistoricoSessoes: React.FC<{
+  sessoes: SessaoEstudo[];
+  onEditar: (id: string, patch: Partial<SessaoEstudo>) => void;
+  onExcluir: (id: string) => void;
+}> = ({ sessoes: sessoesRaw, onEditar, onExcluir }) => {
+  // Só aparecem registros que têm pelo menos um detalhe (páginas, material, vídeo ou observações)
+  const sessoes = sessoesRaw.filter((x) => temDetalhe(x) && !x.oculto);
+  const [aberto, setAberto] = useState<boolean>(true);
+  const [limite, setLimite] = useState<number>(20);
+  const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [confirmObsId, setConfirmObsId] = useState<string | null>(null);
+  const [confirmDelId, setConfirmDelId] = useState<string | null>(null);
+  const [rascunho, setRascunho] = useState({
+    ac: '',
+    er: '',
+    obs: '',
+    material: '',
+    vt: '',
+    vi: '',
+    vf: '',
+    pi: '',
+    pf: '',
+  });
+
+  const fmtData = (d: string) => {
+    const [y, m, dia] = (d || '').split('-');
+    return y && m && dia ? `${dia}/${m}/${y}` : d;
+  };
+  const fmtTempo = (sec: number) => {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    return h > 0 ? `${h}h${String(m).padStart(2, '0')}` : `${m} min`;
+  };
+
+  const iniciarEdicao = (s: SessaoEstudo) => {
+    setRascunho({
+      ac: String(s.acertos || 0),
+      er: String(s.erros || 0),
+      obs: s.observacoes || '',
+      material: s.material || '',
+      vt: s.videoTitulo || '',
+      vi: s.videoInicio || '',
+      vf: s.videoFim || '',
+      pi: s.paginaInicial ? String(s.paginaInicial) : '',
+      pf: s.paginaFinal ? String(s.paginaFinal) : '',
+    });
+    setEditandoId(s.id);
+  };
+
+  const salvarEdicao = () => {
+    if (!editandoId) return;
+    onEditar(editandoId, {
+      acertos: Math.max(0, parseInt(rascunho.ac, 10) || 0),
+      erros: Math.max(0, parseInt(rascunho.er, 10) || 0),
+      observacoes: rascunho.obs.trim(),
+      material: rascunho.material.trim(),
+      videoTitulo: rascunho.vt.trim(),
+      videoInicio: rascunho.vi.trim(),
+      videoFim: rascunho.vf.trim(),
+      paginaInicial: Math.max(0, parseInt(rascunho.pi, 10) || 0),
+      paginaFinal: Math.max(0, parseInt(rascunho.pf, 10) || 0),
+    });
+    setEditandoId(null);
+  };
+
+  const campo =
+    'w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none focus:ring-2 focus:ring-blue-500';
+  const rotulo = 'text-[10px] font-bold uppercase tracking-wider text-slate-500';
+
+  return (
+    <div className="p-5 rounded-3xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">
+          Observações ({sessoes.length})
+        </h3>
+        <button
+          type="button"
+          onClick={() => setAberto(!aberto)}
+          className="text-xs font-bold text-blue-600 dark:text-blue-400 cursor-pointer"
+        >
+          {aberto ? 'Recolher' : 'Mostrar'}
+        </button>
+      </div>
+
+      {aberto &&
+        (sessoes.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            Nenhum registro ainda. Os registros feitos pelo cronômetro aparecem aqui, com observações e detalhes.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {sessoes.slice(0, limite).map((s) => {
+              const totalQ = s.acertos + s.erros;
+              const local = [s.topico, s.subtopico].filter(Boolean).join(' › ');
+              const video = [
+                s.videoTitulo,
+                s.videoInicio && s.videoFim ? `${s.videoInicio} – ${s.videoFim}` : s.videoInicio || s.videoFim,
+              ]
+                .filter(Boolean)
+                .join(' · ');
+              const paginas =
+                s.paginaInicial || s.paginaFinal
+                  ? `pág. ${s.paginaInicial || '?'} a ${s.paginaFinal || '?'}`
+                  : '';
+              const editando = editandoId === s.id;
+
+              return (
+                <div
+                  key={s.id}
+                  className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200/70 dark:border-slate-700/70 space-y-2"
+                >
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                    <span className="font-black text-slate-800 dark:text-slate-100">{fmtData(s.date)}</span>
+                    {s.seconds > 0 && (
+                      <span className="font-mono font-bold text-slate-600 dark:text-slate-300">{fmtTempo(s.seconds)}</span>
+                    )}
+                    {totalQ > 0 && (
+                      <span className="font-bold">
+                        <span className="text-emerald-600 dark:text-emerald-400">✓ {s.acertos}</span>
+                        <span className="text-slate-400"> / </span>
+                        <span className="text-rose-600 dark:text-rose-400">✗ {s.erros}</span>
+                      </span>
+                    )}
+                    {s.categoria && <span className="text-slate-500">{s.categoria}</span>}
+                    {!editando && confirmDelId !== s.id && (
+                      <div className="ml-auto flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => iniciarEdicao(s)}
+                          title="Editar registro"
+                          className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+                        >
+                          <PenLine className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDelId(s.id)}
+                          title="Ocultar esta observação"
+                          className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                    {confirmDelId === s.id && (
+                      <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                        <span className="text-[11px] font-bold text-rose-600 dark:text-rose-400">
+                          Ocultar esta observação da lista? Os totais não mudam.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onExcluir(s.id);
+                            setConfirmDelId(null);
+                          }}
+                          className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-600 hover:bg-rose-700 text-white cursor-pointer"
+                        >
+                          Apagar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDelId(null)}
+                          className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {local && <div className="text-xs font-semibold text-blue-700 dark:text-blue-300">{local}</div>}
+
+                  {editando ? (
+                    <div className="space-y-3 pt-1">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <div className={rotulo}>Acertos</div>
+                          <input
+                            type="number"
+                            min={0}
+                            value={rascunho.ac}
+                            onChange={(e) => setRascunho({ ...rascunho, ac: e.target.value })}
+                            className={campo}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <div className={rotulo}>Erros</div>
+                          <input
+                            type="number"
+                            min={0}
+                            value={rascunho.er}
+                            onChange={(e) => setRascunho({ ...rascunho, er: e.target.value })}
+                            className={campo}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className={rotulo}>Observações</div>
+                        <textarea
+                          rows={3}
+                          value={rascunho.obs}
+                          onChange={(e) => setRascunho({ ...rascunho, obs: e.target.value })}
+                          className={campo}
+                        />
+                        {rascunho.obs && (
+                          <button
+                            type="button"
+                            onClick={() => setRascunho({ ...rascunho, obs: '' })}
+                            className="text-[11px] font-bold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
+                          >
+                            Apagar texto das observações
+                          </button>
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        <div className={rotulo}>Material / aula</div>
+                        <input
+                          type="text"
+                          value={rascunho.material}
+                          onChange={(e) => setRascunho({ ...rascunho, material: e.target.value })}
+                          className={campo}
+                        />
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="space-y-1 col-span-3 sm:col-span-1">
+                          <div className={rotulo}>Videoaula</div>
+                          <input
+                            type="text"
+                            value={rascunho.vt}
+                            onChange={(e) => setRascunho({ ...rascunho, vt: e.target.value })}
+                            className={campo}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <div className={rotulo}>Início</div>
+                          <input
+                            type="text"
+                            value={rascunho.vi}
+                            onChange={(e) => setRascunho({ ...rascunho, vi: e.target.value })}
+                            className={campo}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <div className={rotulo}>Fim</div>
+                          <input
+                            type="text"
+                            value={rascunho.vf}
+                            onChange={(e) => setRascunho({ ...rascunho, vf: e.target.value })}
+                            className={campo}
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <div className={rotulo}>Página inicial</div>
+                          <input
+                            type="number"
+                            min={0}
+                            value={rascunho.pi}
+                            onChange={(e) => setRascunho({ ...rascunho, pi: e.target.value })}
+                            className={campo}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <div className={rotulo}>Página final</div>
+                          <input
+                            type="number"
+                            min={0}
+                            value={rascunho.pf}
+                            onChange={(e) => setRascunho({ ...rascunho, pf: e.target.value })}
+                            className={campo}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditandoId(null)}
+                          className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={salvarEdicao}
+                          className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                        >
+                          Salvar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {s.material && (
+                        <div className="text-xs text-slate-700 dark:text-slate-300">
+                          <span className="font-bold">Material / aula:</span> {s.material}
+                        </div>
+                      )}
+                      {video && (
+                        <div className="text-xs text-slate-700 dark:text-slate-300">
+                          <span className="font-bold">Videoaula:</span> {video}
+                        </div>
+                      )}
+                      {paginas && (
+                        <div className="text-xs text-slate-700 dark:text-slate-300">
+                          <span className="font-bold">Páginas:</span> {paginas}
+                        </div>
+                      )}
+                      {s.observacoes && (
+                        <div className="relative text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap bg-white/70 dark:bg-slate-800/70 rounded-xl p-2.5 pr-9 border border-slate-200/70 dark:border-slate-700/70">
+                          <span className="font-bold">Observações:</span> {s.observacoes}
+                          {confirmObsId === s.id ? (
+                            <div className="mt-2 flex items-center justify-end gap-2">
+                              <span className="text-[11px] font-bold text-rose-600 dark:text-rose-400">
+                                Apagar as observações?
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onEditar(s.id, { observacoes: '' });
+                                  setConfirmObsId(null);
+                                }}
+                                className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-600 hover:bg-rose-700 text-white cursor-pointer"
+                              >
+                                Apagar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmObsId(null)}
+                                className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmObsId(s.id)}
+                              title="Apagar observações"
+                              className="absolute top-2 right-2 p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })}
+            {sessoes.length > limite && (
+              <button
+                type="button"
+                onClick={() => setLimite((l) => l + 20)}
+                className="w-full py-2 rounded-xl text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 cursor-pointer"
+              >
+                Mostrar mais
+              </button>
+            )}
+          </div>
+        ))}
     </div>
   );
 };
@@ -192,6 +700,8 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
         errors += s.e || 0;
       });
     });
+    hits += d.qh || 0;
+    errors += d.qe || 0;
 
     let totalSec = 0;
     let weekSec = 0;
@@ -221,6 +731,12 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
   };
 
   const activeMetrics = activeDisc ? computeDiscMetrics(activeDisc) : null;
+
+  // Edita um registro do histórico e corrige tópico, subtópico, disciplina e o total do dia
+  const editarSessao = (id: string, patch: Partial<SessaoEstudo>) => {
+    if (!activeDisc) return;
+    onUpdateDiscState((prev) => aplicarEdicaoSessao(prev, activeDisc.id, id, patch));
+  };
 
   const updateCurrentTopics = (updater: (topics: Topic[]) => Topic[]) => {
     if (!activeDisc) return;
@@ -470,39 +986,19 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
   };
 
   const handleBulkPaste = () => {
-    const lines = bulkText
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter(Boolean);
-    if (!lines.length) return;
-    let currentGroup = '';
-    const created: Topic[] = [];
-    lines.forEach((line) => {
-      if (line.startsWith('#') || (line.endsWith(':') && line.length < 70)) {
-        currentGroup = line.replace(/^#+\s*/, '').replace(/:$/, '').trim().toUpperCase();
-        return;
-      }
-      const cleaned = line
-        .replace(/^(\d+(\.\d+)*[.)\-:\s]+|[-•*]\s+)/, '')
-        .trim()
-        .toUpperCase();
-      if (cleaned) {
-        created.push({
-          id: uid(),
-          name: cleaned,
-          g: currentGroup || undefined,
-          studied: null,
-          q: false,
-          r: {},
-          h: 0,
-          e: 0,
-        });
-      }
-    });
-    if (created.length) {
-      updateCurrentTopics((topics) => [...topics, ...created]);
-      onToast(`${created.length} tópicos adicionados.`);
+    const lista = parseColagem(bulkText);
+    if (!lista.length) {
+      onToast('A lista está vazia. Nada foi alterado.');
+      return;
     }
+    const existentes = activeDisc?.topics || [];
+    const novos = reconciliarTopicos(existentes, lista);
+    const mantidos = novos.filter((n) => existentes.some((e) => e.id === n.id)).length;
+    const removidos = existentes.length - mantidos;
+    updateCurrentTopics(() => novos);
+    onToast(
+      `Lista salva: ${novos.length} tópicos${removidos ? `, ${removidos} removidos` : ''}.`
+    );
     setBulkText('');
     setShowBulkPaste(false);
   };
@@ -1003,24 +1499,10 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setExpandAllNames((v) => !v)}
-                    className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
-                      expandAllNames
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
-                    }`}
-                    title="Mostrar ou recolher nomes completos dos tópicos"
-                  >
-                    {expandAllNames ? (
-                      <Minimize2 className="w-3.5 h-3.5" />
-                    ) : (
-                      <Maximize2 className="w-3.5 h-3.5" />
-                    )}
-                    <span>{expandAllNames ? 'Recolher nomes' : 'Expandir nomes'}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowBulkPaste(!showBulkPaste)}
+                    onClick={() => {
+                      if (!showBulkPaste) setBulkText(serializarTopicos(activeDisc?.topics || []));
+                      setShowBulkPaste(!showBulkPaste);
+                    }}
                     className="px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 text-blue-600 dark:text-blue-400 text-xs font-bold transition hover:bg-blue-100 cursor-pointer flex items-center gap-1.5 w-fit whitespace-nowrap"
                   >
                     <ListPlus className="w-3.5 h-3.5" />
@@ -1117,7 +1599,6 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
                       <th className="py-2.5 px-1.5 text-center text-rose-600">✗</th>
                       <th className="py-2.5 px-1.5 text-center">Total</th>
                       <th className="py-2.5 px-1.5 text-center">%</th>
-                      <th className="py-2.5 px-1.5 text-center">Último</th>
                       <th className="py-2.5 px-2 text-center min-w-[165px]">PDF / Material</th>
                     </tr>
                   </thead>
@@ -1143,8 +1624,13 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
                         return true;
                       })
                       .map(({ topic, idx }) => {
-                        const totalQ = (topic.h || 0) + (topic.e || 0);
-                        const pct = totalQ > 0 ? Math.round(((topic.h || 0) / totalQ) * 100) : 0;
+                        // Tópico = questões dele + questões de todos os subtópicos
+                        const hitsSubs = (topic.subs || []).reduce((a, sb) => a + (sb.h || 0), 0);
+                        const errSubs = (topic.subs || []).reduce((a, sb) => a + (sb.e || 0), 0);
+                        const hitsTopico = (topic.h || 0) + hitsSubs;
+                        const errosTopico = (topic.e || 0) + errSubs;
+                        const totalQ = hitsTopico + errosTopico;
+                        const pct = totalQ > 0 ? Math.round((hitsTopico / totalQ) * 100) : 0;
                         const pages = countPages(topic);
                         const pctCls =
                           totalQ === 0
@@ -1154,7 +1640,7 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
                             : pct >= 60
                             ? 'text-amber-600 dark:text-amber-400'
                             : 'text-rose-600 dark:text-rose-400';
-                        const isTopicExpanded = expandAllNames || !!expandedNames[topic.id];
+                        const isTopicExpanded = true;
                         const linkedMat = topic.pdfId
                           ? materials.find((m) => m.id === topic.pdfId)
                           : undefined;
@@ -1193,42 +1679,14 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
                                     </button>
                                   </div>
 
-                                  {isTopicExpanded ? (
-                                    <textarea
-                                      key={`${topic.id}-exp`}
-                                      rows={Math.min(5, Math.max(2, Math.ceil(topic.name.length / 36)))}
-                                      defaultValue={topic.name}
-                                      onBlur={(e) => {
-                                        const val = e.target.value.trim().toUpperCase();
-                                        if (val && val !== topic.name) {
-                                          updateCurrentTopics((ts) =>
-                                            ts.map((t) =>
-                                              t.id === topic.id ? { ...t, name: val } : t
-                                            )
-                                          );
-                                        }
-                                      }}
-                                      className="font-bold text-xs uppercase bg-white/70 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 outline-none flex-1 min-w-[200px] px-2 py-1 rounded-lg leading-snug resize-y focus:ring-2 focus:ring-blue-500"
-                                    />
-                                  ) : (
-                                    <input
-                                      key={`${topic.id}-col`}
-                                      type="text"
-                                      defaultValue={topic.name}
-                                      title={topic.name}
-                                      onBlur={(e) => {
-                                        const val = e.target.value.trim().toUpperCase();
-                                        if (val && val !== topic.name) {
-                                          updateCurrentTopics((ts) =>
-                                            ts.map((t) =>
-                                              t.id === topic.id ? { ...t, name: val } : t
-                                            )
-                                          );
-                                        }
-                                      }}
-                                      className="font-bold text-xs uppercase bg-transparent outline-none flex-1 min-w-[160px] truncate px-1 py-0.5 rounded focus:bg-white dark:focus:bg-slate-800"
-                                    />
-                                  )}
+                                  <NomeEditavel
+                                    valor={topic.name}
+                                    onSalvar={(val) =>
+                                      updateCurrentTopics((ts) =>
+                                        ts.map((t) => (t.id === topic.id ? { ...t, name: val } : t))
+                                      )
+                                    }
+                                  />
 
                                   <div className="flex items-center gap-0.5 shrink-0 pt-0.5">
                                     {(topic.subs || []).length > 0 && (
@@ -1237,31 +1695,6 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
                                         {topic.subs!.length}
                                       </span>
                                     )}
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        setExpandedNames((prev) => ({
-                                          ...prev,
-                                          [topic.id]: !isTopicExpanded,
-                                        }))
-                                      }
-                                      className={`p-1 rounded cursor-pointer transition ${
-                                        isTopicExpanded
-                                          ? 'text-blue-600 bg-blue-50 dark:bg-blue-950/60'
-                                          : 'text-slate-400 hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-800'
-                                      }`}
-                                      title={
-                                        isTopicExpanded
-                                          ? 'Recolher nome do tópico'
-                                          : 'Expandir todo o nome do tópico'
-                                      }
-                                    >
-                                      {isTopicExpanded ? (
-                                        <Minimize2 className="w-3.5 h-3.5" />
-                                      ) : (
-                                        <Maximize2 className="w-3.5 h-3.5" />
-                                      )}
-                                    </button>
                                     <button
                                       type="button"
                                       onClick={() =>
@@ -1377,32 +1810,14 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
                                 {pages > 0 ? pages : '–'}
                               </td>
                               <td className="py-2.5 px-1.5 text-center">
-                                <input
-                                  type="number"
-                                  min={0}
-                                  defaultValue={topic.h || 0}
-                                  onBlur={(e) => {
-                                    const v = Math.max(0, parseInt(e.target.value, 10) || 0);
-                                    updateCurrentTopics((ts) =>
-                                      ts.map((t) => (t.id === topic.id ? { ...t, h: v } : t))
-                                    );
-                                  }}
-                                  className="w-11 px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-transparent text-center font-bold text-emerald-600 dark:text-emerald-400 text-xs"
-                                />
+                                <span className="inline-block w-11 py-0.5 text-center font-bold text-emerald-600 dark:text-emerald-400 text-xs">
+                                  {hitsTopico}
+                                </span>
                               </td>
                               <td className="py-2.5 px-1.5 text-center">
-                                <input
-                                  type="number"
-                                  min={0}
-                                  defaultValue={topic.e || 0}
-                                  onBlur={(e) => {
-                                    const v = Math.max(0, parseInt(e.target.value, 10) || 0);
-                                    updateCurrentTopics((ts) =>
-                                      ts.map((t) => (t.id === topic.id ? { ...t, e: v } : t))
-                                    );
-                                  }}
-                                  className="w-11 px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-transparent text-center font-bold text-rose-600 dark:text-rose-400 text-xs"
-                                />
+                                <span className="inline-block w-11 py-0.5 text-center font-bold text-rose-600 dark:text-rose-400 text-xs">
+                                  {errosTopico}
+                                </span>
                               </td>
                               <td className="py-2.5 px-1.5 text-center font-semibold text-slate-700 dark:text-slate-300">
                                 {totalQ}
@@ -1410,24 +1825,7 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
                               <td className={`py-2.5 px-1.5 text-center font-bold ${pctCls}`}>
                                 {totalQ === 0 ? '–' : `${pct}%`}
                               </td>
-                              <td className="py-2.5 px-1.5 text-center">
-                                {topic.studied ? (
-                                  <input
-                                    type="date"
-                                    defaultValue={topic.studied}
-                                    onChange={(e) => {
-                                      const v = e.target.value;
-                                      updateCurrentTopics((ts) =>
-                                        ts.map((t) => (t.id === topic.id ? { ...t, studied: v } : t))
-                                      );
-                                    }}
-                                    className="px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-transparent text-[11px] font-mono"
-                                  />
-                                ) : (
-                                  <span className="text-slate-400">–</span>
-                                )}
-                              </td>
-                              <td className="py-2.5 px-2 text-center">
+                                                            <td className="py-2.5 px-2 text-center">
                                 <div className="flex items-center justify-center gap-1 flex-wrap">
                                   {topic.pdfId ? (
                                     <>
@@ -1518,7 +1916,7 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
                                   : subPct >= 60
                                   ? 'text-amber-600 dark:text-amber-400'
                                   : 'text-rose-600 dark:text-rose-400';
-                              const isSubExpanded = expandAllNames || !!expandedNames[sub.id];
+                              const isSubExpanded = true;
 
                               return (
                                 <tr
@@ -1543,35 +1941,24 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
                                   <td className="py-2 px-2 pl-8 align-top">
                                     <div className="flex items-start gap-1.5">
                                       <span className="text-slate-400 pt-0.5">↳</span>
-                                      <span
-                                        title={sub.name}
-                                        className={`flex-1 font-semibold uppercase text-slate-700 dark:text-slate-300 ${
-                                          isSubExpanded
-                                            ? 'whitespace-normal break-words leading-snug'
-                                            : 'truncate'
-                                        }`}
-                                      >
-                                        {sub.name}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          setExpandedNames((prev) => ({
-                                            ...prev,
-                                            [sub.id]: !isSubExpanded,
-                                          }))
+                                      <NomeEditavel
+                                        valor={sub.name}
+                                        className="font-semibold text-slate-700 dark:text-slate-300"
+                                        onSalvar={(val) =>
+                                          updateCurrentTopics((ts) =>
+                                            ts.map((t) =>
+                                              t.id === topic.id
+                                                ? {
+                                                    ...t,
+                                                    subs: (t.subs || []).map((x) =>
+                                                      x.id === sub.id ? { ...x, name: val } : x
+                                                    ),
+                                                  }
+                                                : t
+                                            )
+                                          )
                                         }
-                                        className="p-0.5 text-slate-400 hover:text-blue-500 rounded cursor-pointer shrink-0"
-                                        title={
-                                          isSubExpanded ? 'Recolher nome' : 'Expandir nome completo'
-                                        }
-                                      >
-                                        {isSubExpanded ? (
-                                          <Minimize2 className="w-3 h-3" />
-                                        ) : (
-                                          <Maximize2 className="w-3 h-3" />
-                                        )}
-                                      </button>
+                                      />
                                       <button
                                         type="button"
                                         onClick={() =>
@@ -1595,8 +1982,51 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
                                       </button>
                                     </div>
                                   </td>
-                                  <td className="py-2 px-1.5 text-center text-slate-400">—</td>
-                                  <td className="py-2 px-1.5 text-center text-slate-400">—</td>
+                                  <td className="py-2 px-1.5 text-center">
+                                    <div className="flex items-center justify-center gap-0.5">
+                                      {(
+                                        [
+                                          ['v', 'V', 'Videoaula'],
+                                          ['p', 'P', 'PDF'],
+                                          ['q', 'Q', 'Questões'],
+                                        ] as const
+                                      ).map(([k, abbr, label]) => {
+                                        const on = !!(sub.tp && sub.tp[k]);
+                                        return (
+                                          <button
+                                            key={k}
+                                            type="button"
+                                            onClick={() =>
+                                              updateSubTopic(topic.id, sub.id, {
+                                                tp: { ...(sub.tp || {}), [k]: !on },
+                                              })
+                                            }
+                                            title={`${label} (${on ? 'marcado' : 'desmarcado'})`}
+                                            className={`w-6 h-6 rounded text-[10px] font-bold transition cursor-pointer ${
+                                              on
+                                                ? 'bg-blue-600 text-white'
+                                                : 'opacity-45 hover:opacity-100 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                                            }`}
+                                          >
+                                            {abbr}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </td>
+<td className="py-2 px-1.5 text-center">
+                                    <input
+                                      type="text"
+                                      defaultValue={sub.videoTime || ''}
+                                      placeholder="00:00"
+                                      onBlur={(e) =>
+                                        updateSubTopic(topic.id, sub.id, {
+                                          videoTime: e.target.value.trim(),
+                                        })
+                                      }
+                                      className="w-14 px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-transparent text-center font-mono text-xs focus:ring-1 focus:ring-blue-500 outline-none"
+                                    />
+                                  </td>
                                   <td className="py-2 px-1.5 text-center">
                                     <input
                                       key={`${sub.id}-pi-${sub.pi || 0}`}
@@ -1631,37 +2061,14 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
                                     {subPages > 0 ? subPages : '–'}
                                   </td>
                                   <td className="py-2 px-1.5 text-center">
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      defaultValue={sub.h || 0}
-                                      onBlur={(e) => {
-                                        const h = Math.max(0, parseInt(e.target.value, 10) || 0);
-                                        updateSubTopic(topic.id, sub.id, {
-                                          h,
-                                          q: h + (sub.e || 0) > 0,
-                                        });
-                                      }}
-                                      className="w-11 px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-transparent text-center font-bold text-emerald-600 dark:text-emerald-400 text-xs"
-                                    />
+                                    <span className="inline-block w-11 py-0.5 text-center font-bold text-emerald-600 dark:text-emerald-400 text-xs">
+                                      {sub.h || 0}
+                                    </span>
                                   </td>
                                   <td className="py-2 px-1.5 text-center">
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      defaultValue={sub.e || 0}
-                                      onBlur={(e) => {
-                                        const errVal = Math.max(
-                                          0,
-                                          parseInt(e.target.value, 10) || 0
-                                        );
-                                        updateSubTopic(topic.id, sub.id, {
-                                          e: errVal,
-                                          q: (sub.h || 0) + errVal > 0,
-                                        });
-                                      }}
-                                      className="w-11 px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-transparent text-center font-bold text-rose-600 dark:text-rose-400 text-xs"
-                                    />
+                                    <span className="inline-block w-11 py-0.5 text-center font-bold text-rose-600 dark:text-rose-400 text-xs">
+                                      {sub.e || 0}
+                                    </span>
                                   </td>
                                   <td className="py-2 px-1.5 text-center font-semibold text-slate-700 dark:text-slate-300">
                                     {subTotalQ}
@@ -1669,24 +2076,7 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
                                   <td className={`py-2 px-1.5 text-center font-bold ${subPctCls}`}>
                                     {subTotalQ === 0 ? '–' : `${subPct}%`}
                                   </td>
-                                  <td className="py-2 px-1.5 text-center">
-                                    {sub.studied ? (
-                                      <input
-                                        type="date"
-                                        defaultValue={sub.studied}
-                                        onChange={(e) =>
-                                          updateSubTopic(topic.id, sub.id, {
-                                            studied: e.target.value,
-                                            done: !!e.target.value,
-                                          })
-                                        }
-                                        className="px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-transparent text-[10px] font-mono"
-                                      />
-                                    ) : (
-                                      <span className="text-slate-400">–</span>
-                                    )}
-                                  </td>
-                                  <td className="py-2 px-2 text-center">
+                                                                    <td className="py-2 px-2 text-center">
                                     <div className="flex items-center justify-center gap-1 flex-wrap">
                                       {sub.pdfId ? (
                                         <>
@@ -1782,10 +2172,26 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
                                     autoFocus
                                     value={subTopicName}
                                     onChange={(e) => setSubTopicName(e.target.value)}
+                                    enterKeyHint="enter"
                                     placeholder="Novo subtópico (Enter para salvar, Esc para cancelar)"
                                     onKeyDown={(e) => {
-                                      if (e.key === 'Enter') addSubTopic(topic.id, subTopicName);
-                                      if (e.key === 'Escape') setAddingSubToId(null);
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        if (subTopicName.trim()) {
+                                          addSubTopic(topic.id, subTopicName);
+                                          setSubTopicName('');
+                                        }
+                                      }
+                                      if (e.key === 'Escape') {
+                                        setSubTopicName('');
+                                        setAddingSubToId(null);
+                                      }
+                                    }}
+                                    onBlur={() => {
+                                      // Ao sair do campo, salva o que foi digitado
+                                      if (subTopicName.trim()) addSubTopic(topic.id, subTopicName);
+                                      setSubTopicName('');
+                                      setAddingSubToId(null);
                                     }}
                                     className="w-full px-2.5 py-1 rounded-lg border border-dashed border-blue-400 bg-white dark:bg-slate-800 text-xs uppercase outline-none"
                                   />
@@ -1826,7 +2232,6 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
                           : '–'}
                       </td>
                       <td />
-                      <td />
                     </tr>
                   </tfoot>
                 </table>
@@ -1834,6 +2239,7 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
 
               <input
                 type="text"
+                enterKeyHint="enter"
                 placeholder="+ Adicionar tópico à tabela (Enter)"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
@@ -2642,6 +3048,16 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+      {viewMode === 'det' && activeDisc && (
+        <HistoricoSessoes
+          sessoes={activeDisc.sessoes || []}
+          onExcluir={(id) => {
+            if (!activeDisc) return;
+            onUpdateDiscState((prev) => ocultarSessao(prev, activeDisc.id, id));
+          }}
+          onEditar={editarSessao}
+        />
       )}
     </div>
   );

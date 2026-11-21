@@ -74,11 +74,35 @@ export interface Topic {
   pdfPagina?: number;
 }
 
+export interface SessaoEstudo {
+  id: string;
+  date: string;
+  seconds: number;
+  acertos: number;
+  erros: number;
+  categoria: string;
+  topicId?: string;
+  subId?: string;
+  oculto?: boolean; // oculto do histórico (continua na aba Observações)
+  topico?: string;
+  subtopico?: string;
+  material: string;
+  videoTitulo: string;
+  videoInicio: string;
+  videoFim: string;
+  paginaInicial: number;
+  paginaFinal: number;
+  observacoes: string;
+}
+
 export interface Discipline {
   id: string;
   name: string;
   topics: Topic[];
   log?: Record<string, number>;
+  sessoes?: SessaoEstudo[];
+  qh?: number; // acertos registrados sem tópico
+  qe?: number; // erros registrados sem tópico
 }
 
 export interface CycleItem {
@@ -150,6 +174,7 @@ export interface DiscState {
 export interface StudyLogPayload {
   disciplineId: string;
   topicId: string;
+  subId?: string; // subtópico (opcional, dentro do tópico escolhido)
   date: string;
   seconds: number;
   category: string;

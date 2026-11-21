@@ -34,6 +34,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
   const [category, setCategory] = useState<string>('PDF');
   const [disciplineId, setDisciplineId] = useState<string>('');
   const [topicId, setTopicId] = useState<string>('');
+  const [subId, setSubId] = useState<string>('');
   const [material, setMaterial] = useState('');
   const [finishTheory, setFinishTheory] = useState(false);
   const [scheduleReviews, setScheduleReviews] = useState(true);
@@ -60,6 +61,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
     setCategory('PDF');
     setDisciplineId(defaultDisc);
     setTopicId('');
+    setSubId('');
     setMaterial('');
     setFinishTheory(false);
     setScheduleReviews(true);
@@ -95,14 +97,16 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
     const seconds = parseHMS(durationStr);
     const hits = Math.max(0, parseInt(correctQuestions, 10) || 0);
     const errs = Math.max(0, parseInt(wrongQuestions, 10) || 0);
-    if (seconds <= 0 && hits + errs <= 0) {
-      setError('Informe o tempo estudado ou a quantidade de questões resolvidas.');
+    const temNota = comments.trim().length > 0;
+    if (seconds <= 0 && hits + errs <= 0 && !temNota) {
+      setError('Informe o tempo, as questões ou escreva uma nota no bloco de notas.');
       return;
     }
 
     onSave({
       disciplineId: selectedDisc.id,
       topicId,
+      subId: subId || undefined,
       date: resolveDate(),
       seconds,
       category,
@@ -249,7 +253,10 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
               </label>
               <select
                 value={topicId}
-                onChange={(e) => setTopicId(e.target.value)}
+                onChange={(e) => {
+                  setTopicId(e.target.value);
+                  setSubId('');
+                }}
                 className={INPUT_CLS}
               >
                 <option value="">Sem tópico específico</option>
@@ -260,6 +267,20 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                   </option>
                 ))}
               </select>
+              {topicId && (topics.find((t) => t.id === topicId)?.subs || []).length > 0 && (
+                <select
+                  value={subId}
+                  onChange={(e) => setSubId(e.target.value)}
+                  className={INPUT_CLS}
+                >
+                  <option value="">Tópico inteiro (sem subtópico)</option>
+                  {(topics.find((t) => t.id === topicId)?.subs || []).map((sb) => (
+                    <option key={sb.id} value={sb.id}>
+                      ↳ {sb.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
           </div>
 
@@ -287,8 +308,8 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
             </div>
           )}
 
-          {/* Questões & Páginas */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {/* Questões */}
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                 Acertos
@@ -315,87 +336,17 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                 className={INPUT_CLS}
               />
             </div>
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                Pág. inicial
-              </label>
-              <input
-                type="number"
-                min={0}
-                value={initialPage}
-                onChange={(e) => setInitialPage(e.target.value)}
-                placeholder="0"
-                className={INPUT_CLS}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                Pág. final
-              </label>
-              <input
-                type="number"
-                min={0}
-                value={finalPage}
-                onChange={(e) => setFinalPage(e.target.value)}
-                placeholder="0"
-                className={INPUT_CLS}
-              />
-            </div>
           </div>
 
-          {/* Material & Vídeo */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                Material / Aula
-              </label>
-              <input
-                type="text"
-                value={material}
-                onChange={(e) => setMaterial(e.target.value)}
-                placeholder="Ex.: Aula 03 - PDF Estratégia"
-                className={INPUT_CLS}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                Videoaula (título / trecho)
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                <input
-                  type="text"
-                  value={videoTitle}
-                  onChange={(e) => setVideoTitle(e.target.value)}
-                  placeholder="Bloco"
-                  className={`${INPUT_CLS} col-span-1`}
-                />
-                <input
-                  type="text"
-                  value={videoStart}
-                  onChange={(e) => setVideoStart(e.target.value)}
-                  placeholder="Início"
-                  className={`${INPUT_CLS} col-span-1`}
-                />
-                <input
-                  type="text"
-                  value={videoEnd}
-                  onChange={(e) => setVideoEnd(e.target.value)}
-                  placeholder="Fim"
-                  className={`${INPUT_CLS} col-span-1`}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-1">
+<div className="space-y-1">
             <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-              Observações
+              Bloco de notas
             </label>
             <textarea
-              rows={2}
+              rows={6}
               value={comments}
               onChange={(e) => setComments(e.target.value)}
-              placeholder="Anotações rápidas sobre a sessão..."
+              placeholder="Anote o que quiser sobre a sessão..."
               className={INPUT_CLS}
             />
           </div>

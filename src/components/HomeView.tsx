@@ -100,6 +100,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
         totalErrors += s.e || 0;
       });
     });
+    totalHits += d.qh || 0;
+    totalErrors += d.qe || 0;
     Object.values(d.log || {}).forEach((sec) => {
       totalSeconds += sec;
     });
@@ -161,6 +163,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
         dErrors += s.e || 0;
       });
     });
+    dHits += d.qh || 0;
+    dErrors += d.qe || 0;
 
     const q = dHits + dErrors;
     return {
@@ -510,7 +514,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </div>
           )}
 
-          <div className="flex items-center justify-around gap-4">
+          <div className="flex items-center justify-center gap-4">
             <div className="flex flex-col items-center gap-2">
               <ProgressRing pct={hoursGoalPct} color="#10b981">
                 <div className="text-center">
@@ -527,21 +531,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
               </div>
             </div>
 
-            <div className="flex flex-col items-center gap-2">
-              <ProgressRing pct={questionsGoalPct} color="#6366f1">
-                <div className="text-center">
-                  <div className="text-lg font-black text-slate-900 dark:text-white leading-none tabular-nums">
-                    {Math.round(questionsGoalPct)}%
-                  </div>
-                </div>
-              </ProgressRing>
-              <div className="text-center">
-                <div className="text-xs font-bold text-slate-800 dark:text-slate-100">Questões</div>
-                <div className="text-[11px] font-mono text-slate-500 tabular-nums">
-                  {thisWeekQ} / {goals.q}
-                </div>
-              </div>
-            </div>
           </div>
         </div>
 

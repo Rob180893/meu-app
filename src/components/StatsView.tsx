@@ -129,6 +129,8 @@ export const StatsView: React.FC<StatsViewProps> = ({
         dReviews += Object.values(s.r || {}).filter(Boolean).length;
       });
     });
+    dHits += d.qh || 0;
+    dErrors += d.qe || 0;
 
     hits += dHits;
     errors += dErrors;

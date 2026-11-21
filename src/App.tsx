@@ -4,6 +4,9 @@ import { CycleView } from './components/CycleView';
 import { CycleAlertToast, playAlertChime, type CycleAlertInfo } from './components/CycleAlertToast';
 import { DisciplinesView } from './components/DisciplinesView';
 import { FloatingReviews } from './components/FloatingReviews';
+import { AvisoRevisoesAbertura } from './components/AvisoRevisoesAbertura';
+import { BackupsAutomaticosModal } from './components/BackupsAutomaticosModal';
+import { deveSalvarBackup, INTERVALO_BACKUP_MS, marcarAlterado, salvarSnapshot } from './utils/backupAuto';
 import { HomeView } from './components/HomeView';
 import { KanbanView } from './components/KanbanView';
 import { MaterialsView } from './components/MaterialsView';
@@ -17,8 +20,10 @@ import { Toast } from './components/Toast';
 import { WeekPlanView } from './components/WeekPlanView';
 import type { DiscState, KanbanState, NavTab, PdfOpenRequest, StudyLogPayload } from './types';
 import { formatHMS, todayStr } from './utils/date';
+import type { SessaoEstudo } from './types';
 import {
   exportBackupJSON,
+  montarBackup,
   exportTopicsCSV,
   importAllMaterials,
   loadBoards,
@@ -30,6 +35,7 @@ import {
   saveDiscState,
   type MaterialBackupEntry,
 } from './utils/storage';
+import { syncTopicFromSubtopics } from './utils/date';
 
 const VALID_TABS: NavTab[] = ['h', 'q', 'd', 'v', 'y', 'm', 'w', 's'];
 
@@ -221,7 +227,27 @@ export default function App() {
               if (payload.seconds > 0) {
                 nextLog[today] = (nextLog[today] || 0) + payload.seconds;
               }
-              const nextTopics = payload.topicId
+              const nextTopics = payload.topicId && payload.subId
+                ? disc.topics.map((t) => {
+                    if (t.id !== payload.topicId) return t;
+                    return syncTopicFromSubtopics({
+                      ...t,
+                      subs: (t.subs || []).map((sb) => {
+                        if (sb.id !== payload.subId) return sb;
+                        const h = (sb.h || 0) + (payload.correctQuestions || 0);
+                        const e = (sb.e || 0) + (payload.wrongQuestions || 0);
+                        return {
+                          ...sb,
+                          h,
+                          e,
+                          q: h + e > 0 ? true : sb.q,
+                          done: payload.finishTheory ? true : sb.done,
+                          studied: payload.finishTheory ? today : sb.studied,
+                        };
+                      }),
+                    });
+                  })
+                : payload.topicId
                 ? disc.topics.map((t) => {
                     if (t.id !== payload.topicId) return t;
                     const updated = { ...t };
@@ -241,7 +267,41 @@ export default function App() {
                     return updated;
                   })
                 : disc.topics;
-              return { ...disc, log: nextLog, topics: nextTopics };
+              const semTopico = !payload.topicId;
+              const topicoRef = payload.topicId
+                ? disc.topics.find((t) => t.id === payload.topicId)
+                : undefined;
+              const subRef =
+                topicoRef && payload.subId
+                  ? (topicoRef.subs || []).find((sb) => sb.id === payload.subId)
+                  : undefined;
+              const novaSessao: SessaoEstudo = {
+                id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                date: today,
+                seconds: payload.seconds || 0,
+                acertos: payload.correctQuestions || 0,
+                erros: payload.wrongQuestions || 0,
+                categoria: payload.category || '',
+                topicId: topicoRef?.id,
+                subId: subRef?.id,
+                topico: topicoRef?.name,
+                subtopico: subRef?.name,
+                material: payload.material || '',
+                videoTitulo: payload.videoTitle || '',
+                videoInicio: payload.videoStart || '',
+                videoFim: payload.videoEnd || '',
+                paginaInicial: payload.initialPage || 0,
+                paginaFinal: payload.finalPage || 0,
+                observacoes: payload.comments || '',
+              };
+              return {
+                ...disc,
+                log: nextLog,
+                topics: nextTopics,
+                qh: (disc.qh || 0) + (semTopico ? payload.correctQuestions : 0),
+                qe: (disc.qe || 0) + (semTopico ? payload.wrongQuestions : 0),
+                sessoes: [novaSessao, ...(disc.sessoes || [])].slice(0, 500),
+              };
             }),
           };
         });
@@ -351,6 +411,34 @@ export default function App() {
     [showToast]
   );
 
+  const [backupsAbertos, setBackupsAbertos] = useState<boolean>(false);
+  const primeiraRenderBackup = useRef<boolean>(true);
+
+  // Marca como "alterado" sempre que os dados mudam (exceto na abertura)
+  useEffect(() => {
+    if (primeiraRenderBackup.current) {
+      primeiraRenderBackup.current = false;
+      return;
+    }
+    marcarAlterado();
+  }, [boards, discState]);
+
+  // Salva uma cópia automática ao abrir e a cada 30 minutos, se houve alteração e passou o intervalo
+  useEffect(() => {
+    const verificar = async () => {
+      if (!deveSalvarBackup()) return;
+      try {
+        const payload = await montarBackup(boards, discState);
+        await salvarSnapshot(JSON.stringify(payload));
+      } catch (err) {
+        console.error('Backup automático falhou', err);
+      }
+    };
+    verificar();
+    const t = setInterval(verificar, 30 * 60 * 1000);
+    return () => clearInterval(t);
+  }, [boards, discState]);
+
   const handleExportJSON = useCallback(async () => {
     try {
       await exportBackupJSON(boards, discState);
@@ -416,9 +504,19 @@ export default function App() {
         onExportJSON={handleExportJSON}
         onExportCSV={handleExportCSV}
         onImportJSON={handleImportJSON}
+        onAbrirBackups={() => setBackupsAbertos(true)}
       />
 
-      <main className="flex-1 min-w-0 flex flex-col">
+      {backupsAbertos && (
+        <BackupsAutomaticosModal
+          onFechar={() => setBackupsAbertos(false)}
+          onRestaurar={(texto) =>
+            handleImportJSON(new File([texto], 'backup-automatico.json', { type: 'application/json' }))
+          }
+        />
+      )}
+
+      <main className="flex-1 min-w-0 flex flex-col pt-20 lg:pt-20">
         {isOffline && (
           <div className="px-4 py-2 bg-amber-500/15 border-b border-amber-500/30 text-amber-800 dark:text-amber-200 text-xs font-bold flex items-center justify-center gap-2">
             <WifiOff className="w-3.5 h-3.5" />
@@ -520,7 +618,7 @@ export default function App() {
       <button
         type="button"
         onClick={() => setTimerOpen(true)}
-        className={`fixed bottom-4 left-4 lg:left-auto lg:right-4 lg:bottom-20 z-[55] px-4 py-3 rounded-2xl shadow-xl border flex items-center gap-2.5 transition cursor-pointer ${
+        className={`fixed bottom-6 right-4 lg:right-4 lg:bottom-20 z-[55] px-4 py-3 rounded-2xl shadow-xl border flex items-center gap-2.5 transition cursor-pointer ${
           activeRun?.start
             ? 'bg-blue-600 text-white border-blue-500 hover:bg-blue-700'
             : 'bg-white/95 dark:bg-slate-900/95 text-slate-800 dark:text-slate-100 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
@@ -537,6 +635,13 @@ export default function App() {
           </span>
         )}
       </button>
+
+      {currentTab !== 'v' && (
+        <AvisoRevisoesAbertura
+          discState={discState}
+          onVerRevisoes={() => setCurrentTab('v')}
+        />
+      )}
 
       {currentTab !== 'v' && (
         <FloatingReviews
