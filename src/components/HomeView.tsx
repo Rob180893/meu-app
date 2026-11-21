@@ -190,7 +190,28 @@ export const HomeView: React.FC<HomeViewProps> = ({
   };
 
   const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
+  const saudacao = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
+  const [nomeUsuario, setNomeUsuario] = useState<string>(() => {
+    try {
+      return localStorage.getItem('nomeUsuario') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [editandoNome, setEditandoNome] = useState<boolean>(false);
+  const [rascunhoNome, setRascunhoNome] = useState<string>(nomeUsuario);
+  const salvarNome = () => {
+    const limpo = rascunhoNome.trim();
+    setNomeUsuario(limpo);
+    try {
+      if (limpo) localStorage.setItem('nomeUsuario', limpo);
+      else localStorage.removeItem('nomeUsuario');
+    } catch {
+      /* ignora */
+    }
+    setEditandoNome(false);
+  };
+  const greeting = nomeUsuario ? `${saudacao}, ${nomeUsuario}` : saudacao;
   const editalDatas = activeEdital?.datas || {};
   const visibleDates = DATE_LABELS.filter((item) => editalDatas[item.key]);
 
@@ -198,9 +219,53 @@ export const HomeView: React.FC<HomeViewProps> = ({
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400">
-            {greeting}
-          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{greeting}</p>
+            {!editandoNome && (
+              <button
+                type="button"
+                onClick={() => {
+                  setRascunhoNome(nomeUsuario);
+                  setEditandoNome(true);
+                }}
+                className="px-2 py-0.5 rounded-lg text-[11px] font-bold text-slate-500 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                title="Editar seu nome"
+              >
+                {nomeUsuario ? 'Editar nome' : '+ Adicionar seu nome'}
+              </button>
+            )}
+          </div>
+          {editandoNome && (
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                type="text"
+                autoFocus
+                value={rascunhoNome}
+                onChange={(e) => setRascunhoNome(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') salvarNome();
+                  if (e.key === 'Escape') setEditandoNome(false);
+                }}
+                placeholder="Digite seu nome"
+                maxLength={30}
+                className="w-56 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+              <button
+                type="button"
+                onClick={salvarNome}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+              >
+                Salvar
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditandoNome(false)}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+              >
+                Cancelar
+              </button>
+            </div>
+          )}
           <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 dark:text-white mt-1">
             {activeEdital?.name || 'Meu concurso'}
           </h2>
