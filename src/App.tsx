@@ -6,6 +6,9 @@ import { DisciplinesView } from './components/DisciplinesView';
 import { FloatingReviews } from './components/FloatingReviews';
 import { AvisoRevisoesAbertura } from './components/AvisoRevisoesAbertura';
 import { BackupsAutomaticosModal } from './components/BackupsAutomaticosModal';
+import { ApagarDadosModal, type AcaoApagar } from './components/ApagarDadosModal';
+import { limparConteudos, limparHoras, limparQuestoes } from './utils/limparDados';
+import { defaultBoards, deleteMaterial, listMaterials } from './utils/storage';
 import { LembreteBackupDiario } from './components/LembreteBackupDiario';
 import { deveSalvarBackup, INTERVALO_BACKUP_MS, marcarAlterado, salvarSnapshot } from './utils/backupAuto';
 import { HomeView } from './components/HomeView';
@@ -413,6 +416,33 @@ export default function App() {
   );
 
   const [backupsAbertos, setBackupsAbertos] = useState<boolean>(false);
+  const [apagarAberto, setApagarAberto] = useState<boolean>(false);
+
+  const handleApagarDados = useCallback(
+    async (acao: AcaoApagar) => {
+      try {
+        if (acao === 'tudo') {
+          setDiscState(normalizeDiscState(null));
+          setBoards(defaultBoards());
+          const materiais = await listMaterials();
+          for (const m of materiais) await deleteMaterial(m.id);
+        } else if (acao === 'horas') {
+          setDiscState((prev) => limparHoras(prev));
+        } else if (acao === 'questoes') {
+          setDiscState((prev) => limparQuestoes(prev));
+        } else {
+          setDiscState((prev) => limparConteudos(prev));
+        }
+        showToast('Dados apagados.');
+      } catch (err) {
+        console.error(err);
+        showToast('Não foi possível apagar os dados.');
+      } finally {
+        setApagarAberto(false);
+      }
+    },
+    [showToast]
+  );
   const primeiraRenderBackup = useRef<boolean>(true);
 
   // Marca como "alterado" sempre que os dados mudam (exceto na abertura)
@@ -506,9 +536,14 @@ export default function App() {
         onExportCSV={handleExportCSV}
         onImportJSON={handleImportJSON}
         onAbrirBackups={() => setBackupsAbertos(true)}
+        onAbrirApagarDados={() => setApagarAberto(true)}
       />
 
       <LembreteBackupDiario onExportar={handleExportJSON} />
+
+      {apagarAberto && (
+        <ApagarDadosModal onFechar={() => setApagarAberto(false)} onApagar={handleApagarDados} />
+      )}
 
       {backupsAbertos && (
         <BackupsAutomaticosModal

@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import {
   AlignLeft,
+  Trash2,
   BarChart3,
   BookOpen,
   CalendarDays,
@@ -29,6 +30,7 @@ interface SidebarProps {
   onExportCSV: () => void;
   onImportJSON: (file: File) => void;
   onAbrirBackups: () => void;
+  onAbrirApagarDados: () => void;
 }
 
 const NAV_ITEMS: { key: NavTab; label: string; icon: React.ReactNode }[] = [
@@ -53,6 +55,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onExportCSV,
   onImportJSON,
   onAbrirBackups,
+  onAbrirApagarDados,
 }) => {
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -214,6 +217,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <RotateCw className="w-3.5 h-3.5" />
               <span>Backups automáticos</span>
+            </button>
+            <button
+              type="button"
+              onClick={onAbrirApagarDados}
+              className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/25 hover:bg-rose-500/40 text-white text-xs font-semibold transition cursor-pointer whitespace-nowrap"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Apagar dados</span>
             </button>
             <input
               ref={fileRef}
