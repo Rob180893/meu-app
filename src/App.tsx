@@ -6,6 +6,7 @@ import { DisciplinesView } from './components/DisciplinesView';
 import { FloatingReviews } from './components/FloatingReviews';
 import { AvisoRevisoesAbertura } from './components/AvisoRevisoesAbertura';
 import { BackupsAutomaticosModal } from './components/BackupsAutomaticosModal';
+import { LembreteBackupDiario } from './components/LembreteBackupDiario';
 import { deveSalvarBackup, INTERVALO_BACKUP_MS, marcarAlterado, salvarSnapshot } from './utils/backupAuto';
 import { HomeView } from './components/HomeView';
 import { KanbanView } from './components/KanbanView';
@@ -506,6 +507,8 @@ export default function App() {
         onImportJSON={handleImportJSON}
         onAbrirBackups={() => setBackupsAbertos(true)}
       />
+
+      <LembreteBackupDiario onExportar={handleExportJSON} />
 
       {backupsAbertos && (
         <BackupsAutomaticosModal

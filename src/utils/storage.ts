@@ -460,11 +460,18 @@ export async function salvarEmQualquerLugar(
 
 export async function exportBackupJSON(boards: KanbanState, disc: DiscState): Promise<void> {
   const payload = await montarBackup(boards, disc);
-  await salvarEmQualquerLugar(
+  const resultado = await salvarEmQualquerLugar(
     `backup-estudos-${todayStr()}.json`,
     JSON.stringify(payload, null, 2),
     'application/json'
   );
+  if (resultado !== 'cancelado') {
+    try {
+      localStorage.setItem('backupUltimoExport', String(Date.now()));
+    } catch {
+      /* ignora */
+    }
+  }
 }
 
 export function exportTopicsCSV(disc: DiscState): void {

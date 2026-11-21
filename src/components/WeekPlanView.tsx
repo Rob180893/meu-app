@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, GripVertical, Plus, Trash2 } from 'lucide-react';
 import type { DiscState, WeekPlan } from '../types';
 import {
@@ -21,6 +21,36 @@ const WEEKDAYS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
 const getMonday = (d: Date): Date => {
   const offset = (d.getDay() + 6) % 7;
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() - offset);
+};
+
+/** Campo numérico livre: aceita qualquer valor digitado e só confirma ao sair do campo. */
+const CampoTempo: React.FC<{
+  valor: number;
+  onConfirmar: (v: number) => void;
+  className?: string;
+}> = ({ valor, onConfirmar, className }) => {
+  const [texto, setTexto] = useState<string>(String(valor));
+  useEffect(() => {
+    setTexto(String(valor));
+  }, [valor]);
+  return (
+    <input
+      type="number"
+      inputMode="numeric"
+      min={0}
+      value={texto}
+      onChange={(e) => setTexto(e.target.value)}
+      onBlur={() => {
+        const n = Math.max(0, parseInt(texto, 10) || 0);
+        setTexto(String(n));
+        if (n !== valor) onConfirmar(n);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+      }}
+      className={className}
+    />
+  );
 };
 
 export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
@@ -71,9 +101,7 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
       onToast('Digite ou selecione uma disciplina.');
       return;
     }
-    const safeH = Math.min(24, Math.max(0, hours || 0));
-    const safeM = Math.min(59, Math.max(0, mins || 0));
-    const min = Math.max(1, safeH * 60 + safeM);
+    const min = Math.max(0, (hours || 0) * 60 + (mins || 0));
     const existing = disciplines.find((d) => d.name.toLowerCase() === clean.toLowerCase());
     const discId = existing ? existing.id : uid();
     const item = { id: uid(), disciplineId: discId, min };
@@ -143,9 +171,7 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
   };
 
   const updateItemTime = (day: string, itemId: string, h: number, m: number) => {
-    const safeH = Math.min(24, Math.max(0, h || 0));
-    const safeM = Math.min(59, Math.max(0, m || 0));
-    const min = Math.max(1, safeH * 60 + safeM);
+    const min = Math.max(0, (h || 0) * 60 + (m || 0));
     updatePlan((plan) => ({
       ...plan,
       [day]: (plan[day] || []).map((i) => (i.id === itemId ? { ...i, min } : i)),
@@ -292,12 +318,9 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
                 Horas
               </label>
-              <input
-                type="number"
-                min={0}
-                max={24}
-                value={hours}
-                onChange={(e) => setHours(parseInt(e.target.value, 10) || 0)}
+              <CampoTempo
+                valor={hours}
+                onConfirmar={setHours}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-center outline-none"
               />
             </div>
@@ -305,13 +328,9 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
                 Minutos
               </label>
-              <input
-                type="number"
-                min={0}
-                max={59}
-                step={5}
-                value={mins}
-                onChange={(e) => setMins(parseInt(e.target.value, 10) || 0)}
+              <CampoTempo
+                valor={mins}
+                onConfirmar={setMins}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-center outline-none"
               />
             </div>
@@ -430,36 +449,15 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
                     </div>
 
                     <div className="flex items-center gap-1 text-[11px] text-slate-500 font-semibold">
-                      <input
-                        type="number"
-                        min={0}
-                        max={24}
-                        value={Math.floor(item.min / 60)}
-                        onChange={(e) =>
-                          updateItemTime(
-                            day,
-                            item.id,
-                            parseInt(e.target.value, 10) || 0,
-                            item.min % 60
-                          )
-                        }
+                      <CampoTempo
+                        valor={Math.floor(item.min / 60)}
+                        onConfirmar={(v) => updateItemTime(day, item.id, v, item.min % 60)}
                         className="w-11 px-1 py-0.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[11px] font-bold text-center outline-none"
                       />
                       <span>h</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={59}
-                        step={5}
-                        value={item.min % 60}
-                        onChange={(e) =>
-                          updateItemTime(
-                            day,
-                            item.id,
-                            Math.floor(item.min / 60),
-                            parseInt(e.target.value, 10) || 0
-                          )
-                        }
+                      <CampoTempo
+                        valor={item.min % 60}
+                        onConfirmar={(v) => updateItemTime(day, item.id, Math.floor(item.min / 60), v)}
                         className="w-11 px-1 py-0.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[11px] font-bold text-center outline-none"
                       />
                       <span>min</span>
