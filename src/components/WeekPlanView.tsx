@@ -528,9 +528,23 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
                         className="w-2 h-2 rounded-full mt-1.5 shrink-0"
                         style={{ backgroundColor: `hsl(${hue} 70% 50%)` }}
                       />
-                      <span className="flex-1 min-w-0 text-xs font-extrabold uppercase tracking-tight text-slate-800 dark:text-slate-100 break-words">
-                        {getDiscName(item.disciplineId)}
-                      </span>
+                      {(() => {
+                        const nomeDisc = getDiscName(item.disciplineId);
+                        // Tamanho automático: a maior palavra do nome sempre cabe inteira na largura do cartão
+                        const maiorPalavra = Math.max(1, ...nomeDisc.split(/\s+/).map((p) => p.length));
+                        return (
+                          <span className="flex-1 min-w-0 [container-type:inline-size]">
+                            <span
+                              className="block font-extrabold uppercase tracking-tight leading-tight text-slate-800 dark:text-slate-100 break-normal"
+                              style={{
+                                fontSize: `max(7px, min(11px, calc(100cqw / ${(maiorPalavra * 0.72).toFixed(2)})))`,
+                              }}
+                            >
+                              {nomeDisc}
+                            </span>
+                          </span>
+                        );
+                      })()}
                       <button
                         type="button"
                         onClick={() => removeItem(day, item.id)}
