@@ -44,6 +44,7 @@ export const MaterialsView: React.FC<MaterialsViewProps> = ({
   onAbrirPdf,
   onToast,
 }) => {
+  const [matParaExcluir, setMatParaExcluir] = useState<string | null>(null);
   const [materials, setMaterials] = useState<MaterialMeta[]>([]);
   const [saving, setSaving] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -156,7 +157,6 @@ export const MaterialsView: React.FC<MaterialsViewProps> = ({
   };
 
   const handleDelete = async (mat: MaterialMeta) => {
-    if (!window.confirm(`Excluir "${mat.name}"? As anotações também serão apagadas.`)) return;
     await deleteMaterial(mat.id);
     onUpdateDiscState((prev) => {
       let next = prev;
@@ -344,15 +344,22 @@ export const MaterialsView: React.FC<MaterialsViewProps> = ({
                   >
                     <Download className="w-4 h-4" />
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(mat)}
+                  {matParaExcluir === mat.id ? (
+                    <span className="flex items-center gap-1 shrink-0 text-[11px] font-bold whitespace-nowrap">
+                      <button type="button" onClick={() => setMatParaExcluir(null)} className="px-2 py-1 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 cursor-pointer">Não</button>
+                      <button type="button" onClick={() => { setMatParaExcluir(null); handleDelete(mat); }} className="px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white cursor-pointer">Excluir</button>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setMatParaExcluir(mat.id)}
                     className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer shrink-0 transition"
                     aria-label={`Excluir ${mat.name}`}
                     title={`Excluir ${mat.name}`}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
+                  )}
                 </div>
                   ))}
                 </div>

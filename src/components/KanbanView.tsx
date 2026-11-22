@@ -14,6 +14,8 @@ export const KanbanView: React.FC<KanbanViewProps> = ({
   onUpdateBoards,
   onToast,
 }) => {
+  const [confirmarExcluirQuadro, setConfirmarExcluirQuadro] = useState(false);
+  const [colunaParaExcluir, setColunaParaExcluir] = useState<string | null>(null);
   const activeBoard = boardsState.list.find((b) => b.id === boardsState.sel) || boardsState.list[0];
   const [renamingBoard, setRenamingBoard] = useState(false);
   const [boardNameInput, setBoardNameInput] = useState('');
@@ -60,7 +62,6 @@ export const KanbanView: React.FC<KanbanViewProps> = ({
 
   const deleteBoard = () => {
     if (boardsState.list.length <= 1) return;
-    if (!window.confirm(`Tem certeza que deseja excluir o quadro "${activeBoard.name}"?`)) return;
     onUpdateBoards((prev) => {
       const remaining = prev.list.filter((b) => b.id !== activeBoard.id);
       return { list: remaining, sel: remaining[0].id };
@@ -98,12 +99,6 @@ export const KanbanView: React.FC<KanbanViewProps> = ({
   };
 
   const deleteColumn = (col: KanbanColumn) => {
-    if (
-      col.cards.length > 0 &&
-      !window.confirm(`A coluna "${col.title}" contém ${col.cards.length} cartões. Deseja excluir mesmo assim?`)
-    ) {
-      return;
-    }
     onUpdateBoards((prev) => ({
       ...prev,
       list: prev.list.map((b) =>
@@ -289,14 +284,21 @@ export const KanbanView: React.FC<KanbanViewProps> = ({
                         <Pen className="w-3.5 h-3.5" />
                       </button>
                       {boardsState.list.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={deleteBoard}
+                        confirmarExcluirQuadro ? (
+                          <span className="flex items-center gap-1 text-[10px] font-bold whitespace-nowrap">
+                            <button type="button" onClick={() => setConfirmarExcluirQuadro(false)} className="px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 cursor-pointer">Não</button>
+                            <button type="button" onClick={() => { setConfirmarExcluirQuadro(false); deleteBoard(); }} className="px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-700 text-white cursor-pointer">Excluir</button>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmarExcluirQuadro(true)}
                           className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 cursor-pointer"
                           title="Excluir quadro"
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
+                        )
                       )}
                     </div>
                   )}
@@ -367,14 +369,22 @@ export const KanbanView: React.FC<KanbanViewProps> = ({
               <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 tabular-nums">
                 {col.cards.length}
               </span>
-              <button
-                type="button"
-                onClick={() => deleteColumn(col)}
+              {colunaParaExcluir === col.id ? (
+                <span className="flex items-center gap-1 text-[10px] font-bold whitespace-nowrap">
+                  <span className="text-rose-600 dark:text-rose-400">Apagar {col.cards.length} cartões?</span>
+                  <button type="button" onClick={() => setColunaParaExcluir(null)} className="px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 cursor-pointer">Não</button>
+                  <button type="button" onClick={() => { setColunaParaExcluir(null); deleteColumn(col); }} className="px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-700 text-white cursor-pointer">Sim</button>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => (col.cards.length > 0 ? setColunaParaExcluir(col.id) : deleteColumn(col))}
                 className="p-1 rounded-lg text-slate-400 hover:text-rose-500 transition cursor-pointer"
                 title="Excluir coluna"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
+              )}
             </div>
 
             <div className="flex-1 overflow-y-auto p-2.5 space-y-2">

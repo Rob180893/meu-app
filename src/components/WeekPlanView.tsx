@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, GripVertical, Plus, Trash2 } from 'lucide-react';
-import type { DiscState, HoraManual, WeekPlan } from '../types';
+import type { DiscState, HoraManual, WeekPlan, WeekPlanItem } from '../types';
 import {
   addDays,
   formatHoursMin,
@@ -189,10 +189,16 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
 
   const [selectedDay, setSelectedDay] = useState(today);
   const [repeatWeeks, setRepeatWeeks] = useState(1);
+  const [confirmarRepeticao, setConfirmarRepeticao] = useState(false);
   const [dragged, setDragged] = useState<{ id: string; from: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
 
   const effectiveDay = days.includes(selectedDay) ? selectedDay : days[0];
+
+  // Cancela uma confirmação pendente se o usuário mudar de semana ou de quantidade
+  useEffect(() => {
+    setConfirmarRepeticao(false);
+  }, [weekStart, repeatWeeks]);
 
   const getDiscName = (id: string) =>
     disciplines.find((d) => d.id === id)?.name || 'Disciplina removida';
@@ -252,9 +258,10 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
     onToast(`Movida para ${formatShortDate(toDay)}.`);
   };
 
-  const handleRepeatWeek = () => {
-    const updates: { day: string; items: { id: string; disciplineId: string; min: number }[] }[] =
-      [];
+  const totalItensSemana = days.reduce((acc, d) => acc + (weekPlan[d] || []).length, 0);
+
+  const montarRepeticoes = () => {
+    const updates: { day: string; items: WeekPlanItem[] }[] = [];
     for (let w = 1; w <= repeatWeeks; w++) {
       days.forEach((day) => {
         const dest = addDays(day, w * 7);
@@ -263,15 +270,11 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
         updates.push({ day: dest, items: cloned });
       });
     }
-    const hasExisting = updates.some((u) => (weekPlan[u.day] || []).length > 0);
-    if (
-      hasExisting &&
-      !window.confirm(
-        `As próximas ${repeatWeeks} semana(s) já têm matérias planejadas. Substituir pelo planejamento desta semana?`
-      )
-    ) {
-      return;
-    }
+    return updates;
+  };
+
+  const executarRepeticao = () => {
+    const updates = montarRepeticoes();
     updatePlan((plan) => {
       const copy = { ...plan };
       updates.forEach((u) => {
@@ -280,11 +283,24 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
       });
       return copy;
     });
+    setConfirmarRepeticao(false);
     onToast(
       `Planejamento repetido para ${
         repeatWeeks === 1 ? 'a próxima semana' : `as próximas ${repeatWeeks} semanas`
       }.`
     );
+  };
+
+  const handleRepeatWeek = () => {
+    if (totalItensSemana === 0) return;
+    const updates = montarRepeticoes();
+    const hasExisting = updates.some((u) => (weekPlan[u.day] || []).length > 0);
+    if (hasExisting) {
+      // Confirmação inline (window.confirm não funciona no APK)
+      setConfirmarRepeticao(true);
+      return;
+    }
+    executarRepeticao();
   };
 
   const updateItemTime = (day: string, itemId: string, h: number, m: number) => {
@@ -379,13 +395,38 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
           <button
             type="button"
             onClick={handleRepeatWeek}
-            disabled={weekMinutes === 0}
+            disabled={totalItensSemana === 0}
             className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:pointer-events-none text-white text-xs font-bold transition cursor-pointer"
           >
             Repetir
           </button>
         </div>
       </div>
+
+      {confirmarRepeticao && (
+        <div className="p-4 rounded-3xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <p className="text-xs font-semibold text-amber-900 dark:text-amber-100">
+            As próximas {repeatWeeks} {repeatWeeks === 1 ? 'semana já tem' : 'semanas já têm'} matérias planejadas.
+            Substituir pelo planejamento desta semana?
+          </p>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setConfirmarRepeticao(false)}
+              className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs font-bold cursor-pointer"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={executarRepeticao}
+              className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold cursor-pointer"
+            >
+              Substituir
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Formulário adicionar */}
       <div className="p-5 rounded-3xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-800 shadow-sm">

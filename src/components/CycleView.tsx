@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ChevronDown, ChevronUp, RotateCcw, Settings, Sparkles, Trash2 } from 'lucide-react';
 import type { ActiveRun, CycleItem, DiscState } from '../types';
 import { formatHoursMin, titleCase, uid } from '../utils/date';
+import { ConfirmacaoInline } from './ConfirmacaoInline';
 
 interface CycleViewProps {
   discState: DiscState;
@@ -18,6 +19,7 @@ export const CycleView: React.FC<CycleViewProps> = ({
   onToast,
   currentElapsedSeconds,
 }) => {
+  const [confirmarRecomeco, setConfirmarRecomeco] = useState(false);
   const activeEdital = discState.eds.find((e) => e.id === discState.edsel) || discState.eds[0];
   const disciplines = activeEdital?.list || [];
   const cycles = activeEdital?.cycles || [];
@@ -197,11 +199,7 @@ export const CycleView: React.FC<CycleViewProps> = ({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => {
-              if (window.confirm('Deseja recomeçar a contagem deste ciclo de estudos?')) {
-                restartCycle(false);
-              }
-            }}
+            onClick={() => setConfirmarRecomeco(true)}
             className="px-4 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold transition hover:bg-emerald-100 cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
           >
             <RotateCcw className="w-3.5 h-3.5" />
@@ -217,6 +215,18 @@ export const CycleView: React.FC<CycleViewProps> = ({
           </button>
         </div>
       </div>
+
+      {confirmarRecomeco && (
+        <ConfirmacaoInline
+          mensagem="Deseja recomeçar a contagem deste ciclo de estudos?"
+          textoConfirmar="Recomeçar"
+          onCancelar={() => setConfirmarRecomeco(false)}
+          onConfirmar={() => {
+            setConfirmarRecomeco(false);
+            restartCycle(false);
+          }}
+        />
+      )}
 
       {/* Resumo */}
       <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">

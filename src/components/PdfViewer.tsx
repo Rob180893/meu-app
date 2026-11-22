@@ -701,6 +701,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   onApplyPageEnd,
   onFechar,
 }) => {
+  const [erroExportacao, setErroExportacao] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
   // Reabre na última página visualizada deste arquivo (a menos que a página inicial tenha sido pedida, ex.: pelo tópico)
@@ -1034,15 +1035,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     updateAnnotations({ ...annotationsRef.current, [String(entrada.page)]: entrada.after });
   };
 
-  const handleClearPage = () => {
-    if (
-      currentStrokes(pageNum).length &&
-      window.confirm(`Apagar todas as anotações da página ${pageNum}?`)
-    ) {
-      handleUpdatePageStrokes(pageNum, []);
-    }
-  };
-
   const selectTool = (next: PdfToolMode) => {
     setTextDraft(null);
     setTool(next);
@@ -1088,9 +1080,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       );
     } catch (err) {
       console.error(err);
-      window.alert(
-        'Não foi possível gravar as marcações neste PDF (alguns PDFs têm restrição interna). Você pode baixar a cópia original.'
-      );
+      setErroExportacao('Não foi possível gravar as marcações neste PDF (alguns PDFs têm restrição interna). Você pode baixar a cópia original.');
     } finally {
       setExportingAnnotated(false);
     }
@@ -1291,6 +1281,21 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                     </span>
                     {hasMarks && <ChevronDown className="w-3.5 h-3.5" />}
                   </button>
+                  {erroExportacao && (
+                    <div
+                      role="alert"
+                      className="absolute right-0 top-full mt-2 w-64 p-3 rounded-2xl bg-rose-50 dark:bg-rose-950 border border-rose-300 dark:border-rose-800 text-xs font-semibold text-rose-800 dark:text-rose-100 shadow-lg z-30 space-y-2"
+                    >
+                      <p>{erroExportacao}</p>
+                      <button
+                        type="button"
+                        onClick={() => setErroExportacao(null)}
+                        className="font-bold underline cursor-pointer"
+                      >
+                        Entendi
+                      </button>
+                    </div>
+                  )}
 
                   {downloadMenuOpen && hasMarks && (
                     <div className="absolute right-0 mt-1.5 w-60 rounded-2xl bg-slate-900 border border-white/15 shadow-2xl p-1.5 z-30 space-y-1">

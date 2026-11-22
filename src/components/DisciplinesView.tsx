@@ -55,6 +55,7 @@ import {
 } from '../utils/date';
 import { aplicarEdicaoSessao, ocultarSessao } from '../utils/sessoes';
 import { listMaterials, saveMaterialFile } from '../utils/storage';
+import { ConfirmacaoInline, EntradaTextoInline } from './ConfirmacaoInline';
 
 interface DisciplinesViewProps {
   discState: DiscState;
@@ -719,6 +720,12 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
   onToast,
   currentElapsedSeconds,
 }) => {
+  const [confirmarExcluirDisc, setConfirmarExcluirDisc] = useState(false);
+  const [confirmarExcluirEdital, setConfirmarExcluirEdital] = useState(false);
+  const [editandoNomeEdital, setEditandoNomeEdital] = useState(false);
+  const [topicoParaExcluir, setTopicoParaExcluir] = useState<string | null>(null);
+  const [confirmarCancelarSessao, setConfirmarCancelarSessao] = useState(false);
+  const [linkEditando, setLinkEditando] = useState<string | null>(null);
   const activeEdital = discState.eds.find((e) => e.id === discState.edsel) || discState.eds[0];
   const disciplines = activeEdital?.list || [];
   const activeDisc = disciplines.find((d) => d.id === discState.sel) || disciplines[0];
@@ -886,7 +893,6 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
       onToast('Você precisa ter pelo menos uma disciplina.');
       return;
     }
-    if (!window.confirm(`Excluir a disciplina "${activeDisc.name}"?`)) return;
     onUpdateDiscState((prev) => {
       const remaining = disciplines.filter((d) => d.id !== activeDisc.id);
       return {
@@ -951,9 +957,7 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
     onToast('Datas do edital salvas.');
   };
 
-  const handleRenameEdital = () => {
-    const next = window.prompt('Novo nome para o edital:', activeEdital?.name || '');
-    if (next === null) return;
+  const salvarNomeEdital = (next: string) => {
     const clean = titleCase(next.trim());
     if (!clean) {
       onToast('O nome do edital não pode ficar vazio.');
@@ -969,13 +973,6 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
   const handleDeleteEdital = () => {
     if (discState.eds.length <= 1) {
       onToast('Você precisa ter pelo menos um edital.');
-      return;
-    }
-    if (
-      !window.confirm(
-        `Apagar o edital "${activeEdital?.name}"? As disciplinas, tópicos e horas dele também serão apagados.`
-      )
-    ) {
       return;
     }
     onUpdateDiscState((prev) => {
@@ -1264,7 +1261,7 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
               </button>
               <button
                 type="button"
-                onClick={handleRenameEdital}
+                onClick={() => setEditandoNomeEdital(true)}
                 className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
                 title="Renomear edital"
               >
@@ -1284,7 +1281,7 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
               {discState.eds.length > 1 && (
                 <button
                   type="button"
-                  onClick={handleDeleteEdital}
+                  onClick={() => setConfirmarExcluirEdital(true)}
                   className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer"
                   title="Excluir edital"
                 >
@@ -1293,6 +1290,30 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
               )}
             </div>
           </div>
+
+          {confirmarExcluirEdital && (
+            <ConfirmacaoInline
+              mensagem={`Apagar o edital "${activeEdital?.name}"? As disciplinas, tópicos e horas dele também serão apagados.`}
+              textoConfirmar="Apagar"
+              perigoso
+              onCancelar={() => setConfirmarExcluirEdital(false)}
+              onConfirmar={() => {
+                setConfirmarExcluirEdital(false);
+                handleDeleteEdital();
+              }}
+            />
+          )}
+          {editandoNomeEdital && (
+            <EntradaTextoInline
+              rotulo="Novo nome do edital"
+              valorInicial={activeEdital?.name || ''}
+              onSalvar={(v) => {
+                setEditandoNomeEdital(false);
+                salvarNomeEdital(v);
+              }}
+              onCancelar={() => setEditandoNomeEdital(false)}
+            />
+          )}
 
           <select
             value={discState.edsel}
@@ -1491,7 +1512,13 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
                 />
                 <button
                   type="button"
-                  onClick={deleteDiscipline}
+                  onClick={() => {
+                    if (disciplines.length <= 1) {
+                      deleteDiscipline();
+                      return;
+                    }
+                    setConfirmarExcluirDisc(true);
+                  }}
                   className="p-2 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950 transition cursor-pointer"
                   title="Excluir disciplina"
                 >
@@ -1499,6 +1526,20 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
                 </button>
               </div>
             </div>
+            {confirmarExcluirDisc && activeDisc && (
+              <div className="px-1">
+                <ConfirmacaoInline
+                  mensagem={`Excluir a disciplina "${activeDisc.name}"? Os tópicos e o histórico dela também serão apagados.`}
+                  textoConfirmar="Excluir"
+                  perigoso
+                  onCancelar={() => setConfirmarExcluirDisc(false)}
+                  onConfirmar={() => {
+                    setConfirmarExcluirDisc(false);
+                    deleteDiscipline();
+                  }}
+                />
+              </div>
+            )}
 
             {/* Cronômetro da disciplina */}
             <div className="p-4 sm:p-5 rounded-3xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1553,15 +1594,14 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
                       <Check className="w-4 h-4" />
                       <span>Salvar</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (window.confirm('Deseja cancelar esta sessão?')) onCancelSession();
-                      }}
-                      className="px-3 py-2.5 rounded-2xl border border-rose-200 dark:border-rose-900 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950 text-xs font-bold transition cursor-pointer whitespace-nowrap"
-                    >
-                      Cancelar
-                    </button>
+                    {confirmarCancelarSessao ? (
+                      <>
+                        <button type="button" onClick={() => setConfirmarCancelarSessao(false)} className="px-3 py-2.5 rounded-2xl border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 text-xs font-bold cursor-pointer whitespace-nowrap">Não</button>
+                        <button type="button" onClick={() => { setConfirmarCancelarSessao(false); onCancelSession(); }} className="px-3 py-2.5 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold cursor-pointer whitespace-nowrap">Sim, cancelar</button>
+                      </>
+                    ) : (
+                      <button type="button" onClick={() => setConfirmarCancelarSessao(true)} className="px-3 py-2.5 rounded-2xl border border-rose-200 dark:border-rose-900 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950 text-xs font-bold transition cursor-pointer whitespace-nowrap">Cancelar</button>
+                    )}
                   </>
                 )}
 
@@ -1800,20 +1840,22 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
                                     >
                                       <Plus className="w-3.5 h-3.5" />
                                     </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        if (window.confirm(`Excluir tópico "${topic.name}"?`)) {
-                                          updateCurrentTopics((ts) =>
-                                            ts.filter((t) => t.id !== topic.id)
-                                          );
-                                        }
-                                      }}
-                                      className="p-1 text-slate-400 hover:text-rose-500 rounded cursor-pointer"
-                                      title="Excluir tópico"
-                                    >
-                                      <X className="w-3.5 h-3.5" />
-                                    </button>
+                                    {topicoParaExcluir === topic.id ? (
+                                      <span className="flex items-center gap-1 text-[10px] font-bold whitespace-nowrap">
+                                        <span className="text-rose-600 dark:text-rose-400">Excluir?</span>
+                                        <button type="button" onClick={() => setTopicoParaExcluir(null)} className="px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 cursor-pointer">Não</button>
+                                        <button type="button" onClick={() => { setTopicoParaExcluir(null); updateCurrentTopics((ts) => ts.filter((t) => t.id !== topic.id)); }} className="px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-700 text-white cursor-pointer">Sim</button>
+                                      </span>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => setTopicoParaExcluir(topic.id)}
+                                        className="p-1 text-slate-400 hover:text-rose-500 rounded cursor-pointer"
+                                        title="Excluir tópico"
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
                               </td>
@@ -1969,27 +2011,29 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
                                       </button>
                                     </div>
                                   ) : (
-                                    <button
+                                    linkEditando === `topico:${topic.id}` ? (
+                                      <EntradaTextoInline
+                                        rotulo="URL externa"
+                                        placeholder="https://"
+                                        onSalvar={(v) => {
+                                          setLinkEditando(null);
+                                          const clean = v.trim();
+                                          if (!clean) return;
+                                          const url = /^https?:\/\//i.test(clean) ? clean : `https://${clean}`;
+                                          updateCurrentTopics((ts) => ts.map((t) => (t.id === topic.id ? { ...t, link: url } : t)));
+                                        }}
+                                        onCancelar={() => setLinkEditando(null)}
+                                      />
+                                    ) : (
+                                      <button
                                       type="button"
-                                      onClick={() => {
-                                        const url = window.prompt(
-                                          'Digite a URL externa (vídeo, site, etc.):'
-                                        );
-                                        if (url) {
-                                          let clean = url.trim();
-                                          if (!/^https?:\/\//i.test(clean)) clean = `https://${clean}`;
-                                          updateCurrentTopics((ts) =>
-                                            ts.map((t) =>
-                                              t.id === topic.id ? { ...t, link: clean } : t
-                                            )
-                                          );
-                                        }
-                                      }}
+                                      onClick={() => setLinkEditando(`topico:${topic.id}`)}
                                       className="p-1 text-slate-400 hover:text-blue-500 transition cursor-pointer"
                                       title="Adicionar link externo"
                                     >
                                       <ExternalLink className="w-3 h-3" />
                                     </button>
+                                    )
                                   )}
                                 </div>
                               </td>
@@ -2231,24 +2275,29 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
                                           </button>
                                         </div>
                                       ) : (
-                                        <button
+                                        linkEditando === `sub:${sub.id}` ? (
+                                          <EntradaTextoInline
+                                            rotulo="URL do material"
+                                            placeholder="https://"
+                                            onSalvar={(v) => {
+                                              setLinkEditando(null);
+                                              const clean = v.trim();
+                                              if (!clean) return;
+                                              const url = /^https?:\/\//i.test(clean) ? clean : `https://${clean}`;
+                                              updateSubTopic(topic.id, sub.id, { link: url });
+                                            }}
+                                            onCancelar={() => setLinkEditando(null)}
+                                          />
+                                        ) : (
+                                          <button
                                           type="button"
-                                          onClick={() => {
-                                            const url = window.prompt(
-                                              'URL do material do subtópico:'
-                                            );
-                                            if (url) {
-                                              let clean = url.trim();
-                                              if (!/^https?:\/\//i.test(clean))
-                                                clean = `https://${clean}`;
-                                              updateSubTopic(topic.id, sub.id, { link: clean });
-                                            }
-                                          }}
+                                          onClick={() => setLinkEditando(`sub:${sub.id}`)}
                                           className="p-0.5 text-slate-400 hover:text-blue-500 cursor-pointer"
                                           title="Adicionar URL externa"
                                         >
                                           <ExternalLink className="w-3 h-3" />
                                         </button>
+                                        )
                                       )}
                                     </div>
                                   </td>
