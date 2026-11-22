@@ -325,7 +325,7 @@ export const TimerModal: React.FC<TimerModalProps> = ({
                 className="px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-extrabold uppercase tracking-wider flex items-center gap-2 shadow-lg transition cursor-pointer whitespace-nowrap"
               >
                 <Check className="w-4 h-4" />
-                <span>Registrar questões</span>
+                <span>Registrar questões ou horas</span>
               </button>
             )}
 

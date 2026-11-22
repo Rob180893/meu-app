@@ -69,8 +69,6 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
   const today = todayStr();
 
   const [discInput, setDiscInput] = useState('');
-  const [hours, setHours] = useState(1);
-  const [mins, setMins] = useState(0);
 
   // Horas registradas manualmente (somente nesta seção)
   const [hmDisc, setHmDisc] = useState<string>('');
@@ -117,75 +115,34 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
     .filter((t) => t.n > 0);
   const lancamentos = [...horasManuais].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 
-  // Gráfico de horas registradas (vindas das disciplinas)
-  const [grafTab, setGrafTab] = useState<'semana' | 'mes' | 'ano'>('semana');
-  const [grafRef, setGrafRef] = useState<Date>(() => new Date());
-  const MESES_NOMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+  // Horas acumuladas por disciplina: todos os registros com valor (formulário de horas + minutos dos cartões),
+  // de todas as semanas, independente de a disciplina estar ou não na semana exibida.
   const CORES_DISC = ['#22c55e', '#a3e635', '#ef4444', '#6b7280', '#8b5cf6', '#f59e0b', '#06b6d4', '#ec4899'];
   const corDisciplina = (id: string) => {
     const i = todasDisciplinas.findIndex((d) => d.id === id);
     return CORES_DISC[(i < 0 ? 0 : i) % CORES_DISC.length];
   };
-  const moverGrafico = (dir: number) => {
-    setGrafRef((d) => {
-      if (grafTab === 'semana') return new Date(d.getFullYear(), d.getMonth(), d.getDate() + dir * 7);
-      if (grafTab === 'mes') return new Date(d.getFullYear(), d.getMonth() + dir, 1);
-      return new Date(d.getFullYear() + dir, d.getMonth(), 1);
-    });
-  };
-  const inicioSemanaRef = (d: Date) => {
-    const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
-    return x;
-  };
-  const f2 = (n: number) => String(n).padStart(2, '0');
-  let grafBuckets: { key: string; label: string }[] = [];
-  let grafTitulo = '';
-  if (grafTab === 'semana') {
-    const ini = inicioSemanaRef(grafRef);
-    grafBuckets = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(ini.getFullYear(), ini.getMonth(), ini.getDate() + i);
-      return { key: todayStr(d), label: `${f2(d.getDate())}/${f2(d.getMonth() + 1)}` };
-    });
-    grafTitulo = `${grafBuckets[0].label} a ${grafBuckets[6].label}/${grafRef.getFullYear()}`;
-  } else if (grafTab === 'mes') {
-    const y = grafRef.getFullYear();
-    const m = grafRef.getMonth();
-    const n = new Date(y, m + 1, 0).getDate();
-    grafBuckets = Array.from({ length: n }, (_, i) => ({ key: todayStr(new Date(y, m, i + 1)), label: String(i + 1) }));
-    grafTitulo = `${MESES_NOMES[m]} de ${y}`;
-  } else {
-    const y = grafRef.getFullYear();
-    grafBuckets = MESES_NOMES.map((nm, i) => ({ key: `${y}-${f2(i + 1)}`, label: nm.slice(0, 3) }));
-    grafTitulo = String(y);
-  }
-  const grafPorBucket = grafBuckets.map((b) => {
-    const mapa: Record<string, number> = {};
-    horasManuais.forEach((h) => {
-      const chave = grafTab === 'ano' ? h.date.slice(0, 7) : h.date;
-      if (chave === b.key) mapa[h.disciplineId] = (mapa[h.disciplineId] || 0) + h.minutes;
-    });
-    return { ...b, mapa, total: Object.values(mapa).reduce((a, v) => a + v, 0) };
-  });
-  const grafMax = Math.max(1, ...grafPorBucket.map((b) => b.total));
-  const grafTotaisId: Record<string, number> = {};
-  grafPorBucket.forEach((b) =>
-    Object.entries(b.mapa).forEach(([id, m]) => {
-      grafTotaisId[id] = (grafTotaisId[id] || 0) + m;
-    })
+  const horasDoPlano: HoraManual[] = Object.entries(weekPlan).flatMap(([date, items]) =>
+    items
+      .filter((i) => i.min > 0)
+      .map((i) => ({ id: `plano-${i.id}`, disciplineId: i.disciplineId, date, minutes: i.min }))
   );
-  const grafTotal = Object.values(grafTotaisId).reduce((a, v) => a + v, 0);
-  const grafLegenda = Object.entries(grafTotaisId)
+  const registrosComValor = [...horasManuais, ...horasDoPlano].filter((h) => h.minutes > 0);
+  const totalAcumulado = registrosComValor.reduce((acc, h) => acc + h.minutes, 0);
+  const acumuladoPorDisc: Record<string, number> = {};
+  registrosComValor.forEach((h) => {
+    acumuladoPorDisc[h.disciplineId] = (acumuladoPorDisc[h.disciplineId] || 0) + h.minutes;
+  });
+  const listaAcumulado = Object.entries(acumuladoPorDisc)
     .filter(([, m]) => m > 0)
-    .sort((a, b) => b[1] - a[1])
+    .sort((x, y) => y[1] - x[1])
     .map(([id, m]) => ({
       id,
       nome: nomeDisciplina(id),
       cor: corDisciplina(id),
       minutos: m,
-      pct: grafTotal > 0 ? Math.round((m / grafTotal) * 100) : 0,
+      pct: totalAcumulado > 0 ? Math.round((m / totalAcumulado) * 100) : 0,
     }));
-  const grafBucketsRender = grafPorBucket;
 
   const [selectedDay, setSelectedDay] = useState(today);
   const [repeatWeeks, setRepeatWeeks] = useState(1);
@@ -223,7 +180,8 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
       onToast('Digite ou selecione uma disciplina.');
       return;
     }
-    const min = Math.max(0, (hours || 0) * 60 + (mins || 0));
+    // Sem horas no formulário: a matéria entra com 0h 0min e o tempo é preenchido no cartão
+    const min = 0;
     const existing = disciplines.find((d) => d.name.toLowerCase() === clean.toLowerCase());
     const discId = existing ? existing.id : uid();
     const item = { id: uid(), disciplineId: discId, min };
@@ -435,7 +393,7 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
           <span>Adicionar ao planejamento</span>
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-          <div className="sm:col-span-4">
+          <div className="sm:col-span-6">
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
               Disciplina
             </label>
@@ -454,7 +412,7 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
             </datalist>
           </div>
 
-          <div className="sm:col-span-2">
+          <div className="sm:col-span-3">
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
               Dia
             </label>
@@ -471,30 +429,7 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
             </select>
           </div>
 
-          <div className="sm:col-span-2 flex items-center gap-2">
-            <div className="flex-1">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
-                Horas
-              </label>
-              <CampoTempo
-                valor={hours}
-                onConfirmar={setHours}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-center outline-none"
-              />
-            </div>
-            <div className="flex-1">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
-                Minutos
-              </label>
-              <CampoTempo
-                valor={mins}
-                onConfirmar={setMins}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-center outline-none"
-              />
-            </div>
-          </div>
-
-          <div className="sm:col-span-4">
+          <div className="sm:col-span-3">
             <button
               type="button"
               onClick={handleAdd}
@@ -645,68 +580,25 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
         })}
       </div>
 
-      {/* Gráfico de horas registradas por disciplina (somente leitura) */}
+      {/* Horas acumuladas por disciplina (todos os registros com valor, sem filtro de semana) */}
       <div className="mt-6 p-5 rounded-3xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex p-1 rounded-xl bg-slate-100 dark:bg-slate-900/60">
-            {(['semana', 'mes', 'ano'] as const).map((k) => (
-              <button
-                key={k}
-                type="button"
-                onClick={() => setGrafTab(k)}
-                className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${
-                  grafTab === k ? 'bg-white dark:bg-slate-700 text-blue-600 shadow-sm' : 'text-slate-500'
-                }`}
-              >
-                {k === 'semana' ? 'Semana' : k === 'mes' ? 'Mês' : 'Ano'}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
-            <button type="button" onClick={() => moverGrafico(-1)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer">
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="whitespace-nowrap">{grafTitulo}</span>
-            <button type="button" onClick={() => moverGrafico(1)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer">
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
         <div className="text-center">
-          <div className="text-2xl font-black font-mono text-slate-900 dark:text-white">{fmtMin(grafTotal)}</div>
-          <div className="text-[11px] text-slate-500">total no período</div>
+          <div className="text-2xl font-black font-mono text-slate-900 dark:text-white">{fmtMin(totalAcumulado)}</div>
+          <div className="text-xs text-slate-500 dark:text-slate-400">total acumulado</div>
         </div>
 
-        <div className="h-48 flex items-end gap-1 sm:gap-2 px-1">
-          {grafBucketsRender.map((b) => (
-            <div key={b.key} className="flex-1 min-w-0 h-full flex flex-col items-center justify-end gap-1">
-              <div className="w-full h-full flex flex-col-reverse justify-start rounded-md overflow-hidden bg-slate-100/60 dark:bg-slate-900/40">
-                {Object.entries(b.mapa).map(([discId, min]) => (
-                  <div
-                    key={discId}
-                    title={`${nomeDisciplina(discId)}: ${fmtMin(min)}`}
-                    style={{ height: `${(min / grafMax) * 100}%`, background: corDisciplina(discId) }}
-                  />
-                ))}
-              </div>
-              <span className="text-[10px] text-slate-500 whitespace-nowrap">{b.label}</span>
-            </div>
-          ))}
-        </div>
-
-        {grafLegenda.length === 0 ? (
-          <p className="text-sm text-slate-500 text-center">Nenhuma hora registrada neste período.</p>
+        {listaAcumulado.length === 0 ? (
+          <p className="text-sm text-center text-slate-500 dark:text-slate-400 py-6">Nenhuma hora registrada ainda.</p>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {grafLegenda.map((t) => (
+          <div className="flex flex-col gap-2">
+            {listaAcumulado.map((t) => (
               <div
                 key={t.id}
-                className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200/70 dark:border-slate-700/70"
+                className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800"
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="w-3 h-3 rounded-sm shrink-0" style={{ background: t.cor }} />
-                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate">{t.nome}</span>
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{t.nome}</span>
                 </div>
                 <div className="text-xs font-mono font-bold text-slate-700 dark:text-slate-200 whitespace-nowrap">
                   {fmtMin(t.minutos)} <span className="text-slate-400 font-normal">({t.pct}%)</span>
