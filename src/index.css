@@ -1,3 +1,6 @@
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+}
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *, [data-theme=dark], [data-theme=dark] *));
 

@@ -35,7 +35,7 @@ export const ApagarDadosModal: React.FC<Props> = ({ onFechar, onApagar }) => {
   const [confirmando, setConfirmando] = useState<AcaoApagar | null>(null);
 
   return (
-    <div className="fixed inset-0 z-[85] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 pt-[1rem]">
+    <div className="fixed inset-0 z-[85] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 pt-[calc(1rem+var(--safe-top))]">
       <div className="w-full max-w-md rounded-3xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-2xl p-6 space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">

@@ -80,7 +80,7 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
   const todasDisciplinas = discState.eds.flatMap((e) => e.list || []);
   const nomeDisciplina = (id: string) =>
     todasDisciplinas.find((d) => d.id === id)?.name || 'Disciplina removida';
-  const fmtMin = (m: number) => `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`;
+  const fmtMin = (m: number) => `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}min`;
   const fmtDia = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
 
   const atualizarHoras = (fn: (prev: HoraManual[]) => HoraManual[]) => {
@@ -116,6 +116,76 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
     })
     .filter((t) => t.n > 0);
   const lancamentos = [...horasManuais].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+  // Gráfico de horas registradas (vindas das disciplinas)
+  const [grafTab, setGrafTab] = useState<'semana' | 'mes' | 'ano'>('semana');
+  const [grafRef, setGrafRef] = useState<Date>(() => new Date());
+  const MESES_NOMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+  const CORES_DISC = ['#22c55e', '#a3e635', '#ef4444', '#6b7280', '#8b5cf6', '#f59e0b', '#06b6d4', '#ec4899'];
+  const corDisciplina = (id: string) => {
+    const i = todasDisciplinas.findIndex((d) => d.id === id);
+    return CORES_DISC[(i < 0 ? 0 : i) % CORES_DISC.length];
+  };
+  const moverGrafico = (dir: number) => {
+    setGrafRef((d) => {
+      if (grafTab === 'semana') return new Date(d.getFullYear(), d.getMonth(), d.getDate() + dir * 7);
+      if (grafTab === 'mes') return new Date(d.getFullYear(), d.getMonth() + dir, 1);
+      return new Date(d.getFullYear() + dir, d.getMonth(), 1);
+    });
+  };
+  const inicioSemanaRef = (d: Date) => {
+    const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+    return x;
+  };
+  const f2 = (n: number) => String(n).padStart(2, '0');
+  let grafBuckets: { key: string; label: string }[] = [];
+  let grafTitulo = '';
+  if (grafTab === 'semana') {
+    const ini = inicioSemanaRef(grafRef);
+    grafBuckets = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(ini.getFullYear(), ini.getMonth(), ini.getDate() + i);
+      return { key: todayStr(d), label: `${f2(d.getDate())}/${f2(d.getMonth() + 1)}` };
+    });
+    grafTitulo = `${grafBuckets[0].label} a ${grafBuckets[6].label}/${grafRef.getFullYear()}`;
+  } else if (grafTab === 'mes') {
+    const y = grafRef.getFullYear();
+    const m = grafRef.getMonth();
+    const n = new Date(y, m + 1, 0).getDate();
+    grafBuckets = Array.from({ length: n }, (_, i) => ({ key: todayStr(new Date(y, m, i + 1)), label: String(i + 1) }));
+    grafTitulo = `${MESES_NOMES[m]} de ${y}`;
+  } else {
+    const y = grafRef.getFullYear();
+    grafBuckets = MESES_NOMES.map((nm, i) => ({ key: `${y}-${f2(i + 1)}`, label: nm.slice(0, 3) }));
+    grafTitulo = String(y);
+  }
+  const grafPorBucket = grafBuckets.map((b) => {
+    const mapa: Record<string, number> = {};
+    horasManuais.forEach((h) => {
+      const chave = grafTab === 'ano' ? h.date.slice(0, 7) : h.date;
+      if (chave === b.key) mapa[h.disciplineId] = (mapa[h.disciplineId] || 0) + h.minutes;
+    });
+    return { ...b, mapa, total: Object.values(mapa).reduce((a, v) => a + v, 0) };
+  });
+  const grafMax = Math.max(1, ...grafPorBucket.map((b) => b.total));
+  const grafTotaisId: Record<string, number> = {};
+  grafPorBucket.forEach((b) =>
+    Object.entries(b.mapa).forEach(([id, m]) => {
+      grafTotaisId[id] = (grafTotaisId[id] || 0) + m;
+    })
+  );
+  const grafTotal = Object.values(grafTotaisId).reduce((a, v) => a + v, 0);
+  const grafLegenda = Object.entries(grafTotaisId)
+    .filter(([, m]) => m > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([id, m]) => ({
+      id,
+      nome: nomeDisciplina(id),
+      cor: corDisciplina(id),
+      minutos: m,
+      pct: grafTotal > 0 ? Math.round((m / grafTotal) * 100) : 0,
+    }));
+  const grafBucketsRender = grafPorBucket;
 
   const [selectedDay, setSelectedDay] = useState(today);
   const [repeatWeeks, setRepeatWeeks] = useState(1);
@@ -188,7 +258,8 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
     for (let w = 1; w <= repeatWeeks; w++) {
       days.forEach((day) => {
         const dest = addDays(day, w * 7);
-        const cloned = (weekPlan[day] || []).map((i) => ({ ...i, id: uid() }));
+        // Repete só as matérias: as horas e minutos não são copiados (começam zerados na nova semana)
+        const cloned = (weekPlan[day] || []).map((i) => ({ ...i, id: uid(), min: 0 }));
         updates.push({ day: dest, items: cloned });
       });
     }
@@ -533,117 +604,74 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
         })}
       </div>
 
-      {/* Horas registradas por disciplina (somente nesta seção) */}
-      <div className="mt-6 p-5 rounded-3xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-5">
-        <div>
-          <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">
-            Horas registradas por disciplina
-          </h3>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Digite quanto estudou em cada dia. Os totais se somam entre semanas. Esta seção não altera outras estatísticas.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
-          <div className="space-y-1">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Disciplina</div>
-            <select
-              value={hmDisc}
-              onChange={(e) => setHmDisc(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none"
-            >
-              <option value="">Escolha…</option>
-              {disciplines.map((d) => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-1">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Dia</div>
-            <input
-              type="date"
-              value={hmData}
-              onChange={(e) => setHmData(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none"
-            />
-          </div>
-          <div className="space-y-1">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Minutos</div>
-            <CampoTempo
-              valor={hmMin}
-              onConfirmar={setHmMin}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-center outline-none"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={adicionarHora}
-            className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
-          >
-            Registrar horas
-          </button>
-        </div>
-
-        <div className="space-y-2">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Total acumulado</div>
-          {totaisHoras.length === 0 && (
-            <p className="text-sm text-slate-500">Nenhuma hora registrada ainda.</p>
-          )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {totaisHoras.map((t) => (
-              <div
-                key={t.id}
-                className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200/70 dark:border-slate-700/70"
+      {/* Gráfico de horas registradas por disciplina (somente leitura) */}
+      <div className="mt-6 p-5 rounded-3xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex p-1 rounded-xl bg-slate-100 dark:bg-slate-900/60">
+            {(['semana', 'mes', 'ano'] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setGrafTab(k)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${
+                  grafTab === k ? 'bg-white dark:bg-slate-700 text-blue-600 shadow-sm' : 'text-slate-500'
+                }`}
               >
-                <span className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{t.nome}</span>
-                <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400 whitespace-nowrap">
-                  {fmtMin(t.minutos)}
-                </span>
-              </div>
+                {k === 'semana' ? 'Semana' : k === 'mes' ? 'Mês' : 'Ano'}
+              </button>
             ))}
           </div>
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <button type="button" onClick={() => moverGrafico(-1)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="whitespace-nowrap">{grafTitulo}</span>
+            <button type="button" onClick={() => moverGrafico(1)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer">
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
-        {lancamentos.length > 0 && (
-          <div className="space-y-2">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Lançamentos</div>
-            <div className="divide-y divide-slate-200 dark:divide-slate-700">
-              {lancamentos.map((h) => (
-                <div key={h.id} className="py-2 flex flex-wrap items-center gap-2 text-xs">
-                  <input
-                    type="date"
-                    value={h.date}
-                    onChange={(e) =>
-                      atualizarHoras((lista) =>
-                        lista.map((x) => (x.id === h.id ? { ...x, date: e.target.value } : x))
-                      )
-                    }
-                    className="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 outline-none"
+        <div className="text-center">
+          <div className="text-2xl font-black font-mono text-slate-900 dark:text-white">{fmtMin(grafTotal)}</div>
+          <div className="text-[11px] text-slate-500">total no período</div>
+        </div>
+
+        <div className="h-48 flex items-end gap-1 sm:gap-2 px-1">
+          {grafBucketsRender.map((b) => (
+            <div key={b.key} className="flex-1 min-w-0 h-full flex flex-col items-center justify-end gap-1">
+              <div className="w-full h-full flex flex-col-reverse justify-start rounded-md overflow-hidden bg-slate-100/60 dark:bg-slate-900/40">
+                {Object.entries(b.mapa).map(([discId, min]) => (
+                  <div
+                    key={discId}
+                    title={`${nomeDisciplina(discId)}: ${fmtMin(min)}`}
+                    style={{ height: `${(min / grafMax) * 100}%`, background: corDisciplina(discId) }}
                   />
-                  <span className="flex-1 min-w-[120px] font-semibold text-slate-800 dark:text-slate-100 truncate">
-                    {nomeDisciplina(h.disciplineId)}
-                  </span>
-                  <CampoTempo
-                    valor={h.minutes}
-                    onConfirmar={(v) =>
-                      atualizarHoras((lista) =>
-                        lista.map((x) => (x.id === h.id ? { ...x, minutes: v } : x))
-                      )
-                    }
-                    className="w-20 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-center font-bold outline-none"
-                  />
-                  <span className="text-slate-500">min</span>
-                  <button
-                    type="button"
-                    onClick={() => atualizarHoras((lista) => lista.filter((x) => x.id !== h.id))}
-                    className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
-                    aria-label="Apagar lançamento"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
+                ))}
+              </div>
+              <span className="text-[10px] text-slate-500 whitespace-nowrap">{b.label}</span>
             </div>
+          ))}
+        </div>
+
+        {grafLegenda.length === 0 ? (
+          <p className="text-sm text-slate-500 text-center">Nenhuma hora registrada neste período.</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {grafLegenda.map((t) => (
+              <div
+                key={t.id}
+                className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200/70 dark:border-slate-700/70"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-3 h-3 rounded-sm shrink-0" style={{ background: t.cor }} />
+                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate">{t.nome}</span>
+                </div>
+                <div className="text-xs font-mono font-bold text-slate-700 dark:text-slate-200 whitespace-nowrap">
+                  {fmtMin(t.minutos)} <span className="text-slate-400 font-normal">({t.pct}%)</span>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>

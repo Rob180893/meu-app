@@ -703,10 +703,19 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 }) => {
   const [title, setTitle] = useState('');
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
-  const [pageNum, setPageNum] = useState(Math.max(1, paginaInicial));
+  // Reabre na última página visualizada deste arquivo (a menos que a página inicial tenha sido pedida, ex.: pelo tópico)
+  const [pageNum, setPageNum] = useState<number>(() => {
+    let salva = 0;
+    try {
+      salva = Number(localStorage.getItem(`pdfUltimaPagina:${pdfId}`) || 0);
+    } catch {
+      salva = 0;
+    }
+    return paginaInicial > 1 ? Math.max(1, paginaInicial) : Math.max(1, salva || paginaInicial || 1);
+  });
   const [totalPages, setTotalPages] = useState(0);
   const [zoomFactor, setZoomFactor] = useState(1);
-  const [continuousMode, setContinuousMode] = useState(false);
+  const [continuousMode, setContinuousMode] = useState<boolean>(true);
   const [tool, setTool] = useState<PdfToolMode>(initialTool);
   const [hlMode, setHlMode] = useState<HighlightMode>('free');
 
@@ -734,6 +743,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
   // Modo leitura limpa (oculta as duas barras do topo para deixar somente o PDF visível)
   const [barsHidden, setBarsHidden] = useState(false);
+  const [quickOpen, setQuickOpen] = useState<boolean>(false);
 
   // Mini-cronômetro começa sempre recolhido para não atrapalhar a concentração
   const [timerExpanded, setTimerExpanded] = useState(false);
@@ -901,6 +911,16 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       onPageProgress(pageNum);
     }
   }, [pageNum, loading, error, needsPassword, pdfDoc, onPageProgress]);
+
+  // Guarda a última página deste arquivo
+  useEffect(() => {
+    if (!pdfId || loading) return;
+    try {
+      localStorage.setItem(`pdfUltimaPagina:${pdfId}`, String(pageNum));
+    } catch {
+      /* ignora */
+    }
+  }, [pageNum, pdfId, loading]);
 
   const goToPage = useCallback(
     (target: number) => {
@@ -1111,17 +1131,57 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
   return (
     <div className="fixed inset-0 z-[80] bg-slate-950/95 flex flex-col pt-[0px]">
-      {/* Botão flutuante discreto quando as barras estão ocultas */}
+      {/* Barras ocultas: botão flutuante discreto com acesso rápido às opções da caneta */}
       {barsHidden && (
-        <button
-          type="button"
-          onClick={() => setBarsHidden(false)}
-          className="fixed top-[0.75rem] right-3 z-40 px-3 py-2 rounded-xl bg-slate-900/75 hover:bg-slate-900 text-white/75 hover:text-white border border-white/15 shadow-lg backdrop-blur-sm text-xs font-bold flex items-center gap-1.5 opacity-45 hover:opacity-100 transition cursor-pointer"
-          title="Mostrar barras do leitor (Esc ou tecla F)"
-        >
-          <PanelTopOpen className="w-4 h-4" />
-          <span>Mostrar barras</span>
-        </button>
+        <div className="fixed top-[calc(0.5rem+var(--safe-top))] right-2 z-40 flex flex-col items-end gap-2">
+          <button
+            type="button"
+            onClick={() => setQuickOpen((v) => !v)}
+            className="w-9 h-9 rounded-full bg-slate-900/40 hover:bg-slate-900/85 text-white/60 hover:text-white border border-white/10 flex items-center justify-center opacity-40 hover:opacity-100 transition cursor-pointer"
+            title="Opções da caneta"
+            aria-label="Opções da caneta"
+          >
+            <PenLine className="w-4 h-4" />
+          </button>
+          {quickOpen && (
+            <div className="p-2 rounded-2xl bg-slate-900/90 border border-white/15 shadow-xl backdrop-blur-sm flex flex-col gap-2 items-end">
+              <div className="flex gap-1">
+                <button type="button" onClick={() => selectTool('pen')} className={btnCls(tool === 'pen')} title="Caneta" aria-label="Caneta">
+                  <PenLine className="w-4 h-4" />
+                </button>
+                <button type="button" onClick={() => selectTool('hl')} className={btnCls(tool === 'hl')} title="Marca-texto" aria-label="Marca-texto">
+                  <Highlighter className="w-4 h-4" />
+                </button>
+                <button type="button" onClick={() => selectTool('erase')} className={btnCls(tool === 'erase')} title="Borracha" aria-label="Borracha">
+                  <Circle className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex gap-1.5">
+                {PEN_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setColor(c)}
+                    className={`w-6 h-6 rounded-full border-2 cursor-pointer ${color === c ? 'border-white' : 'border-white/30'}`}
+                    style={{ background: c }}
+                    aria-label={`Cor ${c}`}
+                  />
+                ))}
+              </div>
+              <div className="flex gap-1">
+                <button type="button" onClick={handleUndo} disabled={undoHistoryRef.current.length === 0} className={`${btnCls(false)} disabled:opacity-40`} title="Desfazer" aria-label="Desfazer">
+                  <Undo2 className="w-4 h-4" />
+                </button>
+                <button type="button" onClick={handleRedo} disabled={redoHistoryRef.current.length === 0} className={`${btnCls(false)} disabled:opacity-40`} title="Refazer" aria-label="Refazer">
+                  <Redo2 className="w-4 h-4" />
+                </button>
+                <button type="button" onClick={() => { setBarsHidden(false); setQuickOpen(false); }} className={btnCls(false)} title="Mostrar barras" aria-label="Mostrar barras">
+                  <PanelTopOpen className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Barras superiores (ocultáveis para deixar visível somente o PDF) */}

@@ -31,3 +31,12 @@ export const configurarBarraStatus = async (): Promise<void> => {
     /* ignora */
   }
 };
+
+/** Define a área reservada para a barra de notificações: 24px no tablet (largura >= 600), e nada no celular. */
+export const aplicarAreaBarraStatus = (): void => {
+  const tablet = window.innerWidth >= 600;
+  document.documentElement.style.setProperty(
+    '--safe-top',
+    tablet ? 'max(env(safe-area-inset-top, 0px), 24px)' : 'env(safe-area-inset-top, 0px)'
+  );
+};

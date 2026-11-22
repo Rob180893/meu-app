@@ -34,6 +34,7 @@ import type {
   PdfOpenRequest,
   SubTopic,
   Topic,
+  HoraManual,
   SessaoEstudo,
 } from '../types';
 import {
@@ -232,6 +233,98 @@ const NomeEditavel: React.FC<{
       >
         <PenLine className="w-3 h-3" />
       </button>
+    </div>
+  );
+};
+
+/** Horas estudadas nesta disciplina. Começa zerada; o usuário adiciona quando quiser. */
+const HorasDisciplina: React.FC<{
+  horas: HoraManual[];
+  onAtualizar: (fn: (prev: HoraManual[]) => HoraManual[]) => void;
+}> = ({ horas, onAtualizar }) => {
+  const [dia, setDia] = useState<string>(todayStr());
+  const [minutos, setMinutos] = useState<string>('');
+  const total = horas.reduce((a, h) => a + h.minutes, 0);
+  const fmt = (m: number) => `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}min`;
+  const adicionar = () => {
+    const m = Math.max(0, parseInt(minutos, 10) || 0);
+    if (m <= 0) return;
+    onAtualizar((lista) => [
+      ...lista,
+      { id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`, disciplineId: '', date: dia, minutes: m },
+    ]);
+    setMinutos('');
+  };
+  const campo = 'px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none';
+  const lista = [...horas].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  return (
+    <div className="p-5 rounded-3xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">Horas estudadas</h3>
+        <span className="text-xs font-mono font-bold text-emerald-700 dark:text-emerald-400">{fmt(total)}</span>
+      </div>
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="space-y-1">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Dia</div>
+          <input type="date" value={dia} onChange={(e) => setDia(e.target.value)} className={campo} />
+        </div>
+        <div className="space-y-1">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Minutos</div>
+          <input
+            type="number"
+            min={0}
+            inputMode="numeric"
+            value={minutos}
+            placeholder="0"
+            onChange={(e) => setMinutos(e.target.value)}
+            className={`${campo} w-24 text-center`}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={adicionar}
+          className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+        >
+          Adicionar
+        </button>
+      </div>
+      {lista.length === 0 ? (
+        <p className="text-sm text-slate-500">Nenhuma hora registrada nesta disciplina ainda.</p>
+      ) : (
+        <div className="divide-y divide-slate-200 dark:divide-slate-700">
+          {lista.map((h) => (
+            <div key={h.id} className="py-2 flex flex-wrap items-center gap-2 text-xs">
+              <input
+                type="date"
+                value={h.date}
+                onChange={(e) =>
+                  onAtualizar((l) => l.map((x) => (x.id === h.id ? { ...x, date: e.target.value } : x)))
+                }
+                className={campo}
+              />
+              <input
+                type="number"
+                min={0}
+                defaultValue={h.minutes}
+                onBlur={(e) => {
+                  const v = Math.max(0, parseInt(e.target.value, 10) || 0);
+                  if (v !== h.minutes) onAtualizar((l) => l.map((x) => (x.id === h.id ? { ...x, minutes: v } : x)));
+                }}
+                className={`${campo} w-24 text-center font-bold`}
+              />
+              <span className="text-slate-500">min</span>
+              <button
+                type="button"
+                onClick={() => onAtualizar((l) => l.filter((x) => x.id !== h.id))}
+                className="ml-auto p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                aria-label="Apagar registro de horas"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -2705,7 +2798,7 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
 
       {/* Modal: Novo Edital */}
       {newEditalModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pt-[1rem] bg-black/50 backdrop-blur-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pt-[calc(1rem+var(--safe-top))] bg-black/50 backdrop-blur-xs">
           <div className="w-full max-w-lg rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-extrabold uppercase tracking-wider text-slate-900 dark:text-white">
@@ -2763,7 +2856,7 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
 
       {/* Modal: Datas do Edital */}
       {editDatesModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pt-[1rem] bg-black/50 backdrop-blur-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pt-[calc(1rem+var(--safe-top))] bg-black/50 backdrop-blur-xs">
           <div className="w-full max-w-lg rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-extrabold uppercase tracking-wider text-slate-900 dark:text-white">
@@ -2805,7 +2898,7 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
       )}
       {/* Modal: Vincular PDF ao Tópico/Subtópico */}
       {pdfLinkTarget && activeDisc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pt-[1rem] bg-black/55 backdrop-blur-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pt-[calc(1rem+var(--safe-top))] bg-black/55 backdrop-blur-xs">
           <div className="w-full max-w-lg rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -3047,6 +3140,20 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
               </div>
             </div>
           </div>
+          {viewMode === 'det' && activeDisc && (
+            <HorasDisciplina
+              horas={(discState.horasManuais || []).filter((h) => h.disciplineId === activeDisc.id)}
+              onAtualizar={(fn) =>
+                onUpdateDiscState((prev) => {
+                  const todas = prev.horasManuais || [];
+                  const outras = todas.filter((h) => h.disciplineId !== activeDisc.id);
+                  const minhas = todas.filter((h) => h.disciplineId === activeDisc.id);
+                  const novas = fn(minhas).map((h) => ({ ...h, disciplineId: activeDisc.id }));
+                  return { ...prev, horasManuais: [...outras, ...novas] };
+                })
+              }
+            />
+          )}
           {viewMode === 'det' && activeDisc && (
           <HistoricoSessoes
             sessoes={activeDisc.sessoes || []}
