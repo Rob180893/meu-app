@@ -9,7 +9,7 @@ import { BackupsAutomaticosModal } from './components/BackupsAutomaticosModal';
 import { aplicarAreaBarraStatus, configurarBarraStatus } from './utils/barraStatus';
 import { ApagarDadosModal, type AcaoApagar } from './components/ApagarDadosModal';
 import { limparConteudos, limparHoras, limparQuestoes } from './utils/limparDados';
-import { defaultBoards, deleteMaterial, listMaterials } from './utils/storage';
+import { defaultBoards, deleteMaterial, listMaterials, restaurarPreferencias } from './utils/storage';
 import { LembreteBackupDiario } from './components/LembreteBackupDiario';
 import { deveSalvarBackup, INTERVALO_BACKUP_MS, marcarAlterado, salvarSnapshot } from './utils/backupAuto';
 import { HomeView } from './components/HomeView';
@@ -502,6 +502,7 @@ export default function App() {
           boards?: KanbanState;
           disc?: unknown;
           materiais?: MaterialBackupEntry[];
+          preferencias?: Parameters<typeof restaurarPreferencias>[0];
         };
         if (data.boards && Array.isArray(data.boards.list)) {
           setBoards(data.boards);
@@ -509,6 +510,7 @@ export default function App() {
         if (data.disc) {
           setDiscState(normalizeDiscState(data.disc));
         }
+        restaurarPreferencias(data.preferencias);
         let pdfCount = 0;
         if (Array.isArray(data.materiais) && data.materiais.length > 0) {
           pdfCount = await importAllMaterials(data.materiais);

@@ -409,25 +409,57 @@ export function downloadBlob(content: BlobPart, filename: string, mimeType: stri
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
+/** Preferências do usuário guardadas no aparelho (nome, tema, aba aberta, última página de cada PDF). */
+export interface PreferenciasBackup {
+  nomeUsuario: string;
+  tema: string;
+  navegacao: string;
+  remAberto: string;
+  pdfUltimaPagina: Record<string, string>;
+}
+
+const PREFIXO_PDF_PAGINA = 'pdfUltimaPagina:';
+
+export function coletarPreferencias(): PreferenciasBackup {
+  const pdfUltimaPagina: Record<string, string> = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(PREFIXO_PDF_PAGINA)) {
+      pdfUltimaPagina[k.slice(PREFIXO_PDF_PAGINA.length)] = localStorage.getItem(k) || '0';
+    }
+  }
+  return {
+    nomeUsuario: localStorage.getItem('nomeUsuario') || '',
+    tema: localStorage.getItem(LS_THEME) || '',
+    navegacao: localStorage.getItem(LS_NAV) || '',
+    remAberto: localStorage.getItem(LS_REM_OPEN) || '',
+    pdfUltimaPagina,
+  };
+}
+
+export function restaurarPreferencias(p: Partial<PreferenciasBackup> | undefined): void {
+  if (!p) return;
+  if (p.nomeUsuario) localStorage.setItem('nomeUsuario', p.nomeUsuario);
+  if (p.tema) localStorage.setItem(LS_THEME, p.tema);
+  if (p.navegacao) localStorage.setItem(LS_NAV, p.navegacao);
+  if (p.remAberto) localStorage.setItem(LS_REM_OPEN, p.remAberto);
+  Object.entries(p.pdfUltimaPagina || {}).forEach(([id, pagina]) => {
+    localStorage.setItem(`${PREFIXO_PDF_PAGINA}${id}`, String(pagina));
+  });
+}
+
 export async function montarBackup(boards: KanbanState, disc: DiscState) {
   const materiais = await exportAllMaterials();
   return {
     app: 'quadro-estudos',
-    version: 1,
+    version: 2,
     exported: new Date().toISOString(),
     boards,
     materiais,
-    disc: {
-      eds: disc.eds,
-      edsel: disc.edsel,
-      sel: disc.sel,
-      intv: disc.intv,
-      acts: disc.acts,
-      goals: disc.goals,
-      rem: disc.rem,
-      qlog: disc.qlog,
-      weekPlan: disc.weekPlan,
-    },
+    // Estado completo do planejamento: editais, disciplinas, sessões, horas do formulário,
+    // planejamento semanal, metas, ciclos, lembretes, registros de questões e cronômetro.
+    disc: { ...disc },
+    preferencias: coletarPreferencias(),
   };
 }
 
