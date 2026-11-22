@@ -77,7 +77,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </header>
 
       {/* Computador: botão de menu no canto superior esquerdo, como antes */}
-      <div className="hidden lg:flex fixed left-3.5 top-3.5 z-40 items-center gap-2">
+      <div className="hidden lg:flex fixed left-3.5 top-[calc(0.875rem+var(--safe-top))] z-40 items-center gap-2">
         <button
           type="button"
           onClick={onToggleOpen}

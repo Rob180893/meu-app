@@ -1262,10 +1262,10 @@ export const DisciplinesView: React.FC<DisciplinesViewProps> = ({
               <button
                 type="button"
                 onClick={() => setEditandoNomeEdital(true)}
-                className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+                className="p-2 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
                 title="Renomear edital"
               >
-                <Pen className="w-3.5 h-3.5" />
+                <Pen className="w-4 h-4" />
               </button>
               <button
                 type="button"

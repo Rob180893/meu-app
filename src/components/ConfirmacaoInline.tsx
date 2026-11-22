@@ -76,8 +76,8 @@ export const EntradaTextoInline: React.FC<EntradaTextoInlineProps> = ({
 }) => {
   const [valor, setValor] = useState<string>(valorInicial);
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center gap-2 p-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-      <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 shrink-0">{rotulo}</span>
+    <div className="flex flex-col gap-2 p-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 w-full min-w-0">
+      <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">{rotulo}</span>
       <input
         autoFocus
         type="text"
@@ -88,9 +88,9 @@ export const EntradaTextoInline: React.FC<EntradaTextoInlineProps> = ({
           if (e.key === 'Enter') onSalvar(valor);
           if (e.key === 'Escape') onCancelar();
         }}
-        className="flex-1 min-w-0 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs outline-none"
+        className="w-full min-w-0 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs outline-none"
       />
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center justify-end gap-2">
         <button
           type="button"
           onClick={onCancelar}
