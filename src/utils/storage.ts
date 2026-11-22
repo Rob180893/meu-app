@@ -1,5 +1,8 @@
 import type { AnnotationsMap, DiscState, KanbanState, MaterialMeta } from '../types';
 import { todayStr } from './date';
+import { Capacitor } from '@capacitor/core';
+import { Directory, Encoding, Filesystem } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 
 const DB_NAME = 'quadro-materiais';
 const DB_VERSION = 1;
@@ -473,6 +476,29 @@ export async function salvarEmQualquerLugar(
   conteudo: string,
   tipo = 'application/json'
 ): Promise<'compartilhado' | 'baixado' | 'cancelado'> {
+  // No aplicativo instalado: grava o arquivo de verdade no aparelho e abre a tela de compartilhar
+  // com o arquivo anexado (Salvar em Arquivos, Downloads, Drive etc.).
+  if (Capacitor.isNativePlatform()) {
+    const gravado = await Filesystem.writeFile({
+      path: nome,
+      data: conteudo,
+      directory: Directory.Cache,
+      encoding: Encoding.UTF8,
+      recursive: true,
+    });
+    try {
+      await Share.share({
+        title: nome,
+        dialogTitle: 'Salvar arquivo',
+        files: [gravado.uri],
+      });
+    } catch (err) {
+      if (String((err as Error)?.message ?? err).toLowerCase().includes('cancel')) return 'cancelado';
+      throw err;
+    }
+    return 'compartilhado';
+  }
+
   const arquivo = new File([conteudo], nome, { type: tipo });
   const nav = navigator as Navigator & {
     canShare?: (data: { files: File[] }) => boolean;
@@ -490,7 +516,10 @@ export async function salvarEmQualquerLugar(
   return 'baixado';
 }
 
-export async function exportBackupJSON(boards: KanbanState, disc: DiscState): Promise<void> {
+export async function exportBackupJSON(
+  boards: KanbanState,
+  disc: DiscState
+): Promise<'compartilhado' | 'baixado' | 'cancelado'> {
   const payload = await montarBackup(boards, disc);
   const resultado = await salvarEmQualquerLugar(
     `backup-estudos-${todayStr()}.json`,
@@ -504,6 +533,7 @@ export async function exportBackupJSON(boards: KanbanState, disc: DiscState): Pr
       /* ignora */
     }
   }
+  return resultado;
 }
 
 export function exportTopicsCSV(disc: DiscState): void {

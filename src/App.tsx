@@ -480,8 +480,13 @@ export default function App() {
 
   const handleExportJSON = useCallback(async () => {
     try {
-      await exportBackupJSON(boards, discState);
-      showToast('Backup JSON exportado!');
+      const resultado = await exportBackupJSON(boards, discState);
+      if (resultado === 'cancelado') return;
+      showToast(
+        resultado === 'baixado'
+          ? 'Backup JSON exportado!'
+          : 'Escolha onde salvar o backup na tela que abriu.'
+      );
     } catch (err) {
       console.error(err);
       showToast('Não foi possível exportar o backup.');
