@@ -50,7 +50,7 @@ export const CycleAlertToast: React.FC<CycleAlertToastProps> = ({ alert, onDismi
   return (
     <div
       role="alert"
-      className="fixed top-[calc(1rem+max(env(safe-area-inset-top,0px),28px))] right-4 z-[115] max-w-sm w-[calc(100vw-2rem)] p-4 rounded-2xl bg-emerald-600 text-white shadow-2xl border border-emerald-400/40 flex items-start gap-3"
+      className="fixed top-[1rem] right-4 z-[115] max-w-sm w-[calc(100vw-2rem)] p-4 rounded-2xl bg-emerald-600 text-white shadow-2xl border border-emerald-400/40 flex items-start gap-3"
     >
       <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
         <BellRing className="w-5 h-5" />

@@ -156,8 +156,16 @@ export interface ActivityLog {
   s: number;
 }
 
+export interface HoraManual {
+  id: string;
+  disciplineId: string;
+  date: string; // YYYY-MM-DD
+  minutes: number;
+}
+
 export interface DiscState {
   eds: Edital[];
+  horasManuais?: HoraManual[]; // horas digitadas no planejamento (só aparecem nessa seção)
   edsel: string;
   sel: string;
   intv: number[];

@@ -126,7 +126,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto pt-[calc(1rem+max(env(safe-area-inset-top,0px),28px))]"
+      className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto pt-[1rem]"
       role="dialog"
       aria-modal="true"
       aria-label="Adicionar Estudo"

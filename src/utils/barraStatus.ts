@@ -20,3 +20,14 @@ export const mostrarBarraStatus = async (): Promise<void> => {
     /* ignora */
   }
 };
+
+/** Ao abrir o app: a tela fica abaixo da barra de notificações, e a barra fica visível. */
+export const configurarBarraStatus = async (): Promise<void> => {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await StatusBar.setOverlaysWebView({ overlay: false });
+    await StatusBar.show();
+  } catch {
+    /* ignora */
+  }
+};

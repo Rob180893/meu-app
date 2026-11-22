@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, GripVertical, Plus, Trash2 } from 'lucide-react';
-import type { DiscState, WeekPlan } from '../types';
+import type { DiscState, HoraManual, WeekPlan } from '../types';
 import {
   addDays,
   formatHoursMin,
@@ -71,6 +71,52 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
   const [discInput, setDiscInput] = useState('');
   const [hours, setHours] = useState(1);
   const [mins, setMins] = useState(0);
+
+  // Horas registradas manualmente (somente nesta seção)
+  const [hmDisc, setHmDisc] = useState<string>('');
+  const [hmData, setHmData] = useState<string>(todayStr());
+  const [hmMin, setHmMin] = useState<number>(0);
+  const horasManuais: HoraManual[] = discState.horasManuais || [];
+  const todasDisciplinas = discState.eds.flatMap((e) => e.list || []);
+  const nomeDisciplina = (id: string) =>
+    todasDisciplinas.find((d) => d.id === id)?.name || 'Disciplina removida';
+  const fmtMin = (m: number) => `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`;
+  const fmtDia = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
+
+  const atualizarHoras = (fn: (prev: HoraManual[]) => HoraManual[]) => {
+    onUpdateDiscState((prev) => ({ ...prev, horasManuais: fn(prev.horasManuais || []) }));
+  };
+
+  const adicionarHora = () => {
+    if (!hmDisc) {
+      onToast('Escolha a disciplina.');
+      return;
+    }
+    if (hmMin <= 0) {
+      onToast('Informe os minutos estudados.');
+      return;
+    }
+    atualizarHoras((lista) => [
+      ...lista,
+      {
+        id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+        disciplineId: hmDisc,
+        date: hmData,
+        minutes: hmMin,
+      },
+    ]);
+    setHmMin(0);
+    onToast('Horas registradas.');
+  };
+
+  const totaisHoras = todasDisciplinas
+    .map((d) => {
+      const itens = horasManuais.filter((h) => h.disciplineId === d.id);
+      return { id: d.id, nome: d.name, minutos: itens.reduce((a, h) => a + h.minutes, 0), n: itens.length };
+    })
+    .filter((t) => t.n > 0);
+  const lancamentos = [...horasManuais].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
   const [selectedDay, setSelectedDay] = useState(today);
   const [repeatWeeks, setRepeatWeeks] = useState(1);
   const [dragged, setDragged] = useState<{ id: string; from: string } | null>(null);
@@ -485,6 +531,121 @@ export const WeekPlanView: React.FC<WeekPlanViewProps> = ({
             </div>
           );
         })}
+      </div>
+
+      {/* Horas registradas por disciplina (somente nesta seção) */}
+      <div className="mt-6 p-5 rounded-3xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-5">
+        <div>
+          <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">
+            Horas registradas por disciplina
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Digite quanto estudou em cada dia. Os totais se somam entre semanas. Esta seção não altera outras estatísticas.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+          <div className="space-y-1">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Disciplina</div>
+            <select
+              value={hmDisc}
+              onChange={(e) => setHmDisc(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none"
+            >
+              <option value="">Escolha…</option>
+              {disciplines.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Dia</div>
+            <input
+              type="date"
+              value={hmData}
+              onChange={(e) => setHmData(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none"
+            />
+          </div>
+          <div className="space-y-1">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Minutos</div>
+            <CampoTempo
+              valor={hmMin}
+              onConfirmar={setHmMin}
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-center outline-none"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={adicionarHora}
+            className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+          >
+            Registrar horas
+          </button>
+        </div>
+
+        <div className="space-y-2">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Total acumulado</div>
+          {totaisHoras.length === 0 && (
+            <p className="text-sm text-slate-500">Nenhuma hora registrada ainda.</p>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {totaisHoras.map((t) => (
+              <div
+                key={t.id}
+                className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200/70 dark:border-slate-700/70"
+              >
+                <span className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{t.nome}</span>
+                <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400 whitespace-nowrap">
+                  {fmtMin(t.minutos)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {lancamentos.length > 0 && (
+          <div className="space-y-2">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Lançamentos</div>
+            <div className="divide-y divide-slate-200 dark:divide-slate-700">
+              {lancamentos.map((h) => (
+                <div key={h.id} className="py-2 flex flex-wrap items-center gap-2 text-xs">
+                  <input
+                    type="date"
+                    value={h.date}
+                    onChange={(e) =>
+                      atualizarHoras((lista) =>
+                        lista.map((x) => (x.id === h.id ? { ...x, date: e.target.value } : x))
+                      )
+                    }
+                    className="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 outline-none"
+                  />
+                  <span className="flex-1 min-w-[120px] font-semibold text-slate-800 dark:text-slate-100 truncate">
+                    {nomeDisciplina(h.disciplineId)}
+                  </span>
+                  <CampoTempo
+                    valor={h.minutes}
+                    onConfirmar={(v) =>
+                      atualizarHoras((lista) =>
+                        lista.map((x) => (x.id === h.id ? { ...x, minutes: v } : x))
+                      )
+                    }
+                    className="w-20 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-center font-bold outline-none"
+                  />
+                  <span className="text-slate-500">min</span>
+                  <button
+                    type="button"
+                    onClick={() => atualizarHoras((lista) => lista.filter((x) => x.id !== h.id))}
+                    className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                    aria-label="Apagar lançamento"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -25,6 +25,7 @@ import {
   Timer,
   Trash2,
   Type,
+  Redo2,
   Undo2,
   X,
   ZoomIn,
@@ -423,7 +424,13 @@ const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({
     return [(e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height];
   };
 
+  const touchScrollRef = useRef<{ x: number; y: number } | null>(null);
+
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerType === 'touch') {
+      touchScrollRef.current = { x: e.clientX, y: e.clientY };
+      return;
+    }
     if (tool === 'nav' || !viewportSize.w) return;
     const [nx, ny] = getNormalizedPoint(e);
 
@@ -477,6 +484,16 @@ const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerType === 'touch') {
+      const ultimo = touchScrollRef.current;
+      const rolagem = e.currentTarget.closest('[data-pdf-scroll]') as HTMLElement | null;
+      if (ultimo && rolagem) {
+        rolagem.scrollTop -= e.clientY - ultimo.y;
+        rolagem.scrollLeft -= e.clientX - ultimo.x;
+        touchScrollRef.current = { x: e.clientX, y: e.clientY };
+      }
+      return;
+    }
     if (!isDrawingRef.current) return;
     const [nx, ny] = getNormalizedPoint(e);
     if (tool === 'erase') {
@@ -490,7 +507,11 @@ const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({
     }
   };
 
-  const handlePointerUp = () => {
+  const handlePointerUp = (e?: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e?.pointerType === 'touch') {
+      touchScrollRef.current = null;
+      return;
+    }
     if (!isDrawingRef.current) return;
     isDrawingRef.current = false;
     if (activeStrokeRef.current) {
@@ -687,7 +708,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   const [zoomFactor, setZoomFactor] = useState(1);
   const [continuousMode, setContinuousMode] = useState(false);
   const [tool, setTool] = useState<PdfToolMode>(initialTool);
-  const [hlMode, setHlMode] = useState<HighlightMode>('text');
+  const [hlMode, setHlMode] = useState<HighlightMode>('free');
 
   // Sem distrações: esconde a barra de notificações enquanto o PDF estiver aberto
   useEffect(() => {
@@ -757,6 +778,8 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   );
 
   const openWithBytes = useCallback(async (bytes: Uint8Array, password?: string) => {
+    undoHistoryRef.current = [];
+    redoHistoryRef.current = [];
     setError(null);
     setPasswordError(null);
     setLoading(true);
@@ -928,8 +951,16 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [onFechar, pageNum, continuousMode, goToPage, textDraft, downloadMenuOpen, barsHidden]);
 
+  const undoHistoryRef = useRef<{ page: number; before: Stroke[]; after: Stroke[] }[]>([]);
+  const redoHistoryRef = useRef<{ page: number; before: Stroke[]; after: Stroke[] }[]>([]);
+
   const handleUpdatePageStrokes = useCallback(
     (targetPage: number, strokes: Stroke[]) => {
+      const antes = annotationsRef.current[String(targetPage)] || [];
+      if (antes !== strokes) {
+        undoHistoryRef.current.push({ page: targetPage, before: antes, after: strokes });
+        redoHistoryRef.current = [];
+      }
       updateAnnotations({
         ...annotationsRef.current,
         [String(targetPage)]: strokes,
@@ -970,8 +1001,17 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   }, [textDraft, color, fontSizeNorm, handleUpdatePageStrokes]);
 
   const handleUndo = () => {
-    const list = currentStrokes(pageNum);
-    if (list.length) handleUpdatePageStrokes(pageNum, list.slice(0, -1));
+    const entrada = undoHistoryRef.current.pop();
+    if (!entrada) return;
+    redoHistoryRef.current.push(entrada);
+    updateAnnotations({ ...annotationsRef.current, [String(entrada.page)]: entrada.before });
+  };
+
+  const handleRedo = () => {
+    const entrada = redoHistoryRef.current.pop();
+    if (!entrada) return;
+    undoHistoryRef.current.push(entrada);
+    updateAnnotations({ ...annotationsRef.current, [String(entrada.page)]: entrada.after });
   };
 
   const handleClearPage = () => {
@@ -1070,13 +1110,13 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     }`;
 
   return (
-    <div className="fixed inset-0 z-[80] bg-slate-950/95 flex flex-col pt-[max(env(safe-area-inset-top,0px),28px)]">
+    <div className="fixed inset-0 z-[80] bg-slate-950/95 flex flex-col pt-[0px]">
       {/* Botão flutuante discreto quando as barras estão ocultas */}
       {barsHidden && (
         <button
           type="button"
           onClick={() => setBarsHidden(false)}
-          className="fixed top-[calc(0.75rem+max(env(safe-area-inset-top,0px),28px))] right-3 z-40 px-3 py-2 rounded-xl bg-slate-900/75 hover:bg-slate-900 text-white/75 hover:text-white border border-white/15 shadow-lg backdrop-blur-sm text-xs font-bold flex items-center gap-1.5 opacity-45 hover:opacity-100 transition cursor-pointer"
+          className="fixed top-[0.75rem] right-3 z-40 px-3 py-2 rounded-xl bg-slate-900/75 hover:bg-slate-900 text-white/75 hover:text-white border border-white/15 shadow-lg backdrop-blur-sm text-xs font-bold flex items-center gap-1.5 opacity-45 hover:opacity-100 transition cursor-pointer"
           title="Mostrar barras do leitor (Esc ou tecla F)"
         >
           <PanelTopOpen className="w-4 h-4" />
@@ -1418,15 +1458,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => selectTool('text')}
-              className={btnCls(tool === 'text')}
-              title="Escrever nota de texto (clique na página)"
-            >
-              <Type className="w-4 h-4" />
-              <span className="hidden sm:inline">Texto</span>
-            </button>
-            <button
-              type="button"
               onClick={() => selectTool('erase')}
               className={btnCls(tool === 'erase')}
               title="Borracha (apaga grifos, riscos e textos)"
@@ -1435,38 +1466,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
               <span className="hidden sm:inline">Borracha</span>
             </button>
 
-            {/* Submodo do Marca-texto: Texto corrido (padrão) vs Traço livre */}
-            {tool === 'hl' && (
-              <>
-                <div className="w-px h-6 bg-white/20 mx-0.5" />
-                <div className="flex items-center gap-1 bg-white/5 rounded-xl p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setHlMode('text')}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer whitespace-nowrap transition ${
-                      hlMode === 'text'
-                        ? 'bg-blue-600 text-white'
-                        : 'text-slate-300 hover:bg-white/10'
-                    }`}
-                    title="Arraste sobre as palavras para marcar exatamente o texto corrido"
-                  >
-                    Texto corrido
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setHlMode('free')}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer whitespace-nowrap transition ${
-                      hlMode === 'free'
-                        ? 'bg-blue-600 text-white'
-                        : 'text-slate-300 hover:bg-white/10'
-                    }`}
-                    title="Traço livre com o mouse ou caneta (útil em PDFs escaneados)"
-                  >
-                    Livre
-                  </button>
-                </div>
-              </>
-            )}
 
             {(tool === 'pen' || tool === 'hl' || tool === 'text') && (
               <>
@@ -1516,20 +1515,22 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             <button
               type="button"
               onClick={handleUndo}
-              className={btnCls(false)}
-              title="Desfazer último item da página atual"
+              disabled={undoHistoryRef.current.length === 0}
+              className={`${btnCls(false)} disabled:opacity-40`}
+              title="Desfazer"
               aria-label="Desfazer"
             >
               <Undo2 className="w-4 h-4" />
             </button>
             <button
               type="button"
-              onClick={handleClearPage}
-              className={btnCls(false)}
-              title="Limpar anotações da página atual"
-              aria-label="Limpar página"
+              onClick={handleRedo}
+              disabled={redoHistoryRef.current.length === 0}
+              className={`${btnCls(false)} disabled:opacity-40`}
+              title="Refazer"
+              aria-label="Refazer"
             >
-              <Trash2 className="w-4 h-4" />
+              <Redo2 className="w-4 h-4" />
             </button>
 
             {onApplyPageEnd && totalPages > 0 && (
@@ -1550,6 +1551,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       {/* Área do documento */}
       <div
         ref={containerRef}
+        data-pdf-scroll="1"
         className={`flex-1 overflow-auto flex flex-col items-center ${barsHidden ? 'p-1.5' : 'p-3'}`}
       >
         {needsPassword && (

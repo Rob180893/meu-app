@@ -62,10 +62,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <>
       {/* Celular/tablet: barra fixa no topo com o nome e o botão de menu */}
-      <header className="lg:hidden fixed top-0 inset-x-0 z-40 h-[calc(3.5rem+max(env(safe-area-inset-top,0px),28px))] pt-[max(env(safe-area-inset-top,0px),28px)] flex items-center justify-between px-4 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border-b border-slate-200/80 dark:border-slate-700/80 shadow-sm">
-        <span className="font-extrabold text-base tracking-wide text-slate-900 dark:text-white">
-          Meu Quadro
-        </span>
+      <header className="lg:hidden fixed top-0 inset-x-0 z-40 h-[3.5rem] pt-[0px] flex items-center justify-between px-4 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border-b border-slate-200/80 dark:border-slate-700/80 shadow-sm">
         <button
           type="button"
           onClick={onToggleOpen}
@@ -74,6 +71,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         >
           <Menu className="w-6 h-6" />
         </button>
+        <span className="font-extrabold text-base tracking-wide text-slate-900 dark:text-white">
+          Meu Quadro
+        </span>
       </header>
 
       {/* Computador: botão de menu no canto superior esquerdo, como antes */}
@@ -96,7 +96,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <aside
-        className={`fixed top-0 left-0 bottom-0 z-40 w-64 bg-gradient-to-b from-[#2563eb] via-[#1d4ed8] to-[#1e3a8a] text-white flex flex-col justify-between p-4 pt-[calc(1rem+max(env(safe-area-inset-top,0px),28px))] shadow-2xl transition-transform duration-300 ease-in-out overflow-y-auto ${
+        className={`fixed top-0 left-0 bottom-0 z-40 w-64 bg-gradient-to-b from-[#2563eb] via-[#1d4ed8] to-[#1e3a8a] text-white flex flex-col justify-between p-4 pt-[1rem] shadow-2xl transition-transform duration-300 ease-in-out overflow-y-auto ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >

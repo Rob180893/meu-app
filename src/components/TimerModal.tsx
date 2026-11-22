@@ -62,8 +62,6 @@ export const TimerModal: React.FC<TimerModalProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
-
   const isRunning = Boolean(activeRun?.start);
   const [mostrarTudo, setMostrarTudo] = useState<boolean>(false);
 
@@ -71,6 +69,9 @@ export const TimerModal: React.FC<TimerModalProps> = ({
   useEffect(() => {
     setMostrarTudo(false);
   }, [isRunning, selectedDiscId]);
+
+  if (!isOpen) return null;
+
   const isActiveDiscMatch = Boolean(activeRun && activeRun.id === selectedDiscId);
   const elapsedForView = isActiveDiscMatch ? currentElapsedSeconds : 0;
 
@@ -162,7 +163,7 @@ export const TimerModal: React.FC<TimerModalProps> = ({
       aria-modal="true"
       aria-label="Cronômetro de Estudos"
     >
-      <div className="flex items-center justify-between px-5 sm:px-8 pt-[calc(1rem+max(env(safe-area-inset-top,0px),28px))] pb-4 border-b border-white/10">
+      <div className="flex items-center justify-between px-5 sm:px-8 pt-[1rem] pb-4 border-b border-white/10">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
             <Timer className="w-4 h-4" />

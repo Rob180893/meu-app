@@ -46,7 +46,7 @@ export const BackupsAutomaticosModal: React.FC<Props> = ({ onFechar, onRestaurar
   };
 
   return (
-    <div className="fixed inset-0 z-[85] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 pt-[calc(1rem+max(env(safe-area-inset-top,0px),28px))]">
+    <div className="fixed inset-0 z-[85] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 pt-[1rem]">
       <div className="w-full max-w-md rounded-3xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-2xl p-6 space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
